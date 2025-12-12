@@ -22,8 +22,12 @@
   // Check if extension context is still valid
   function isExtensionContextValid() {
     try {
-      // This will throw if context is invalidated
-      return !!chrome.runtime?.id;
+      // Multiple checks to ensure context is truly valid
+      if (!chrome?.runtime) return false;
+      if (!chrome.runtime.id) return false;
+      // Try to access storage - this will throw if context is invalid
+      if (!chrome?.storage?.local) return false;
+      return true;
     } catch (e) {
       return false;
     }
@@ -39,6 +43,54 @@
           <button class="tweetcraft-retry-btn" onclick="location.reload()">Refresh Page</button>
         </div>
       `;
+    }
+  }
+
+  // Safe wrapper for Chrome API calls
+  async function safeChromeSend(message) {
+    if (!isExtensionContextValid()) {
+      throw new Error('Extension context invalidated');
+    }
+    try {
+      return await chrome.runtime.sendMessage(message);
+    } catch (e) {
+      if (e.message?.includes('Extension context invalidated') || 
+          e.message?.includes('context invalidated') ||
+          e.message?.includes('Receiving end does not exist')) {
+        state.contextInvalidated = true;
+        throw new Error('Extension context invalidated');
+      }
+      throw e;
+    }
+  }
+
+  // Safe wrapper for Chrome storage
+  async function safeChromeStorageGet(keys) {
+    if (!isExtensionContextValid()) {
+      throw new Error('Extension context invalidated');
+    }
+    try {
+      return await chrome.storage.local.get(keys);
+    } catch (e) {
+      if (e.message?.includes('Extension context invalidated') || 
+          e.message?.includes('context invalidated')) {
+        state.contextInvalidated = true;
+        throw new Error('Extension context invalidated');
+      }
+      throw e;
+    }
+  }
+
+  // Safe wrapper for Chrome storage set
+  async function safeChromeStorageSet(data) {
+    if (!isExtensionContextValid()) {
+      return; // Silently fail for set operations
+    }
+    try {
+      await chrome.storage.local.set(data);
+    } catch (e) {
+      // Silently fail for storage set
+      console.log('TweetCraft: Could not save to storage', e.message);
     }
   }
 
@@ -119,37 +171,28 @@
 
   // Load persisted panel state
   async function loadPanelState() {
-    if (!isExtensionContextValid()) return;
+    if (state.contextInvalidated) return;
     
     try {
-      const saved = await chrome.storage.local.get(['panelTone', 'panelFeedback', 'panelCandidates']);
+      const saved = await safeChromeStorageGet(['panelTone', 'panelFeedback', 'panelCandidates']);
       if (saved.panelTone) state.tone = saved.panelTone;
       if (saved.panelFeedback) state.feedback = saved.panelFeedback;
       if (saved.panelCandidates) state.lastCandidates = saved.panelCandidates;
       console.log('TweetCraft: Loaded panel state', { tone: state.tone, feedback: state.feedback?.substring(0, 20) });
     } catch (error) {
-      // Silently fail - extension context may be invalidated
-      if (error.message?.includes('Extension context invalidated')) {
-        state.contextInvalidated = true;
-      }
-      console.log('TweetCraft: Could not load panel state', error);
+      console.log('TweetCraft: Could not load panel state', error.message);
     }
   }
 
   // Save panel state
   async function savePanelState() {
-    if (!isExtensionContextValid()) return;
+    if (state.contextInvalidated) return;
     
-    try {
-      await chrome.storage.local.set({
-        panelTone: state.tone,
-        panelFeedback: state.feedback,
-        panelCandidates: state.lastCandidates
-      });
-    } catch (error) {
-      // Silently fail - extension context may be invalidated
-      console.log('TweetCraft: Could not save panel state', error);
-    }
+    await safeChromeStorageSet({
+      panelTone: state.tone,
+      panelFeedback: state.feedback,
+      panelCandidates: state.lastCandidates
+    });
   }
 
   // Observe DOM for compose areas
@@ -483,8 +526,8 @@
     const resultsContainer = panel.querySelector('#tweetcraft-results');
     const generateBtn = panel.querySelector('.tweetcraft-generate-btn');
     
-    // Check if extension context is still valid
-    if (!isExtensionContextValid()) {
+    // Check if extension context is already known to be invalid
+    if (state.contextInvalidated) {
       showContextInvalidatedError(resultsContainer);
       return;
     }
@@ -511,14 +554,15 @@
     `;
 
     try {
-      const settings = await chrome.storage.local.get(['candidates', 'useHistory']);
+      // Use safe wrappers for Chrome API calls
+      const settings = await safeChromeStorageGet(['candidates', 'useHistory']);
       
       let context = '';
       if (settings.useHistory !== false && state.userHistory.length > 0) {
         context = `\n\nUser's previous tweets for style reference:\n${state.userHistory.slice(0, 5).map((t, i) => `${i + 1}. "${t}"`).join('\n')}`;
       }
 
-      const response = await chrome.runtime.sendMessage({
+      const response = await safeChromeSend({
         type: 'GENERATE_REPLIES',
         payload: {
           originalTweet,
@@ -530,11 +574,11 @@
         }
       });
 
-      if (response.error) {
+      if (response?.error) {
         throw new Error(response.error);
       }
 
-      state.candidates = response.candidates || [];
+      state.candidates = response?.candidates || [];
       state.lastCandidates = state.candidates; // Save for persistence
       state.selectedIndex = 0;
       savePanelState(); // Persist candidates
@@ -544,11 +588,9 @@
       console.error('TweetCraft error:', error);
       
       // Check if it's a context invalidation error
-      const isContextError = error.message?.includes('Extension context invalidated') || 
-                            error.message?.includes('context invalidated') ||
-                            !isExtensionContextValid();
-      
-      if (isContextError) {
+      if (state.contextInvalidated || 
+          error.message?.includes('Extension context invalidated') || 
+          error.message?.includes('context invalidated')) {
         showContextInvalidatedError(resultsContainer);
       } else {
         resultsContainer.innerHTML = `
@@ -561,13 +603,15 @@
       }
     } finally {
       state.isLoading = false;
-      generateBtn.disabled = false;
-      generateBtn.innerHTML = `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-        </svg>
-        Generate
-      `;
+      if (generateBtn) {
+        generateBtn.disabled = false;
+        generateBtn.innerHTML = `
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+          </svg>
+          Generate
+        `;
+      }
     }
   }
 
@@ -665,10 +709,10 @@
 
   // Load user history
   async function loadUserHistory() {
-    if (!isExtensionContextValid()) return;
+    if (state.contextInvalidated) return;
     
     try {
-      const cached = await chrome.storage.local.get(['userHistory', 'historyTimestamp']);
+      const cached = await safeChromeStorageGet(['userHistory', 'historyTimestamp']);
       if (cached.userHistory && cached.historyTimestamp) {
         const age = Date.now() - cached.historyTimestamp;
         if (age < 60 * 60 * 1000) {
@@ -677,13 +721,12 @@
         }
       }
       state.userHistory = scrapeUserTweets();
-      await chrome.storage.local.set({
+      await safeChromeStorageSet({
         userHistory: state.userHistory,
         historyTimestamp: Date.now()
       });
     } catch (error) {
-      // Silently fail - extension context may be invalidated
-      console.log('TweetCraft: Could not load history', error);
+      console.log('TweetCraft: Could not load history', error.message);
     }
   }
 

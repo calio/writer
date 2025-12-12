@@ -11,14 +11,45 @@
     isLoading: false,
     currentTextarea: null,
     currentPanel: null,
-    userHistory: []
+    userHistory: [],
+    // Persisted state
+    tone: 'match',
+    feedback: '',
+    lastCandidates: []
   };
 
   // Initialize
   function init() {
     console.log('TweetCraft: Initializing...');
+    loadPanelState(); // Load persisted state
     observeDOM();
     loadUserHistory();
+  }
+
+  // Load persisted panel state
+  async function loadPanelState() {
+    try {
+      const saved = await chrome.storage.local.get(['panelTone', 'panelFeedback', 'panelCandidates']);
+      if (saved.panelTone) state.tone = saved.panelTone;
+      if (saved.panelFeedback) state.feedback = saved.panelFeedback;
+      if (saved.panelCandidates) state.lastCandidates = saved.panelCandidates;
+      console.log('TweetCraft: Loaded panel state', { tone: state.tone, feedback: state.feedback?.substring(0, 20) });
+    } catch (error) {
+      console.log('TweetCraft: Could not load panel state', error);
+    }
+  }
+
+  // Save panel state
+  async function savePanelState() {
+    try {
+      await chrome.storage.local.set({
+        panelTone: state.tone,
+        panelFeedback: state.feedback,
+        panelCandidates: state.lastCandidates
+      });
+    } catch (error) {
+      console.log('TweetCraft: Could not save panel state', error);
+    }
   }
 
   // Observe DOM for compose areas
@@ -182,6 +213,13 @@
     // Close when clicking outside
     const closeOnClickOutside = (e) => {
       if (!panel.contains(e.target) && !btn.contains(e.target) && !wrapper.contains(e.target)) {
+        // Save feedback before closing
+        const feedbackInput = panel.querySelector('.tweetcraft-feedback-input');
+        if (feedbackInput) {
+          state.feedback = feedbackInput.value;
+          savePanelState();
+        }
+        
         panel.classList.remove('visible');
         setTimeout(() => {
           panel.remove();
@@ -198,6 +236,10 @@
   function createInlinePanel(container) {
     const originalTweet = extractOriginalTweet(container);
     const imageUrls = extractTweetImages(container);
+
+    // Use persisted tone and feedback
+    const savedTone = state.tone || 'match';
+    const savedFeedback = state.feedback || '';
 
     const panel = document.createElement('div');
     panel.className = 'tweetcraft-inline-panel';
@@ -216,15 +258,15 @@
       </div>
       
       <div class="tweetcraft-tone-row">
-        <button class="tweetcraft-tone-chip active" data-tone="match">Match Style</button>
-        <button class="tweetcraft-tone-chip" data-tone="professional">Pro</button>
-        <button class="tweetcraft-tone-chip" data-tone="casual">Casual</button>
-        <button class="tweetcraft-tone-chip" data-tone="witty">Witty</button>
-        <button class="tweetcraft-tone-chip" data-tone="thoughtful">Deep</button>
+        <button class="tweetcraft-tone-chip ${savedTone === 'match' ? 'active' : ''}" data-tone="match">Match Style</button>
+        <button class="tweetcraft-tone-chip ${savedTone === 'professional' ? 'active' : ''}" data-tone="professional">Pro</button>
+        <button class="tweetcraft-tone-chip ${savedTone === 'casual' ? 'active' : ''}" data-tone="casual">Casual</button>
+        <button class="tweetcraft-tone-chip ${savedTone === 'witty' ? 'active' : ''}" data-tone="witty">Witty</button>
+        <button class="tweetcraft-tone-chip ${savedTone === 'thoughtful' ? 'active' : ''}" data-tone="thoughtful">Deep</button>
       </div>
 
       <div class="tweetcraft-feedback-row">
-        <input type="text" class="tweetcraft-feedback-input" placeholder="Instructions: e.g., make it shorter, add a question..." />
+        <input type="text" class="tweetcraft-feedback-input" placeholder="Instructions: e.g., make it shorter, add a question..." value="${escapeHtml(savedFeedback)}" />
         <button class="tweetcraft-generate-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
@@ -241,10 +283,20 @@
     // Store data
     panel.dataset.originalTweet = originalTweet;
     panel.dataset.imageUrls = JSON.stringify(imageUrls);
-    panel.dataset.tone = 'match';
+    panel.dataset.tone = savedTone;
 
     // Setup event listeners
     setupPanelListeners(panel);
+
+    // Show last candidates if available
+    if (state.lastCandidates && state.lastCandidates.length > 0) {
+      state.candidates = state.lastCandidates;
+      state.selectedIndex = 0;
+      setTimeout(() => {
+        const resultsContainer = panel.querySelector('#tweetcraft-results');
+        if (resultsContainer) renderResults(resultsContainer);
+      }, 50);
+    }
 
     return panel;
   }
@@ -253,6 +305,13 @@
   function setupPanelListeners(panel) {
     // Close button
     panel.querySelector('.tweetcraft-panel-close').addEventListener('click', () => {
+      // Save feedback before closing
+      const feedbackInput = panel.querySelector('.tweetcraft-feedback-input');
+      if (feedbackInput) {
+        state.feedback = feedbackInput.value;
+        savePanelState();
+      }
+      
       panel.classList.remove('visible');
       setTimeout(() => {
         panel.remove();
@@ -267,6 +326,10 @@
         panel.querySelectorAll('.tweetcraft-tone-chip').forEach(c => c.classList.remove('active'));
         chip.classList.add('active');
         panel.dataset.tone = chip.dataset.tone;
+        
+        // Save tone state
+        state.tone = chip.dataset.tone;
+        savePanelState();
       });
     });
 
@@ -275,8 +338,17 @@
       generateReplies(panel);
     });
 
+    // Feedback input - save on change
+    const feedbackInput = panel.querySelector('.tweetcraft-feedback-input');
+    feedbackInput.addEventListener('input', () => {
+      state.feedback = feedbackInput.value;
+      // Debounce save
+      clearTimeout(window.tweetcraftFeedbackSaveTimeout);
+      window.tweetcraftFeedbackSaveTimeout = setTimeout(savePanelState, 500);
+    });
+
     // Enter key in feedback input
-    panel.querySelector('.tweetcraft-feedback-input').addEventListener('keydown', (e) => {
+    feedbackInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         generateReplies(panel);
@@ -388,7 +460,9 @@
       }
 
       state.candidates = response.candidates || [];
+      state.lastCandidates = state.candidates; // Save for persistence
       state.selectedIndex = 0;
+      savePanelState(); // Persist candidates
       renderResults(resultsContainer);
 
     } catch (error) {
@@ -487,6 +561,11 @@
       editable.dispatchEvent(new Event('input', { bubbles: true }));
       editable.dispatchEvent(new Event('change', { bubbles: true }));
     }
+
+    // Clear candidates after use (user will want fresh replies for next tweet)
+    state.candidates = [];
+    state.lastCandidates = [];
+    savePanelState();
 
     // Close panel
     if (state.currentPanel) {

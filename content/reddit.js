@@ -1,4 +1,4 @@
-// ReplyForge AI - Reddit Content Script
+// Writer AI - Reddit Content Script
 // Provides AI-powered reply assistance for Reddit comments
 
 (function() {
@@ -90,13 +90,13 @@
     try {
       await chrome.storage.local.set(data);
     } catch (e) {
-      console.log('ReplyForge: Could not save to storage', e.message);
+      console.log('Writer: Could not save to storage', e.message);
     }
   }
 
   // Initialize
   function init() {
-    console.log('ReplyForge Reddit: Initializing...', { isOldReddit });
+    console.log('Writer Reddit: Initializing...', { isOldReddit });
     
     // Remove any stale buttons from previous loads
     document.querySelectorAll('.replyforge-btn-wrapper, .tweetcraft-btn-wrapper').forEach(el => el.remove());
@@ -115,9 +115,9 @@
       if (saved.panelTone) state.tone = saved.panelTone;
       if (saved.panelFeedback) state.feedback = saved.panelFeedback;
       if (saved.panelCandidates) state.lastCandidates = saved.panelCandidates;
-      console.log('ReplyForge Reddit: Loaded panel state', { tone: state.tone });
+      console.log('Writer Reddit: Loaded panel state', { tone: state.tone });
     } catch (error) {
-      console.log('ReplyForge Reddit: Could not load panel state', error.message);
+      console.log('Writer Reddit: Could not load panel state', error.message);
     }
   }
 
@@ -133,7 +133,7 @@
 
   // Global click handler using event delegation
   function setupGlobalClickHandler() {
-    const handleReplyForgeClick = (e) => {
+    const handleWriterClick = (e) => {
       const btn = e.target.closest('.replyforge-btn, .tweetcraft-btn');
       const wrapper = e.target.closest('.replyforge-btn-wrapper, .tweetcraft-btn-wrapper');
       
@@ -143,7 +143,7 @@
       e.stopPropagation();
       e.stopImmediatePropagation();
       
-      console.log('ReplyForge Reddit: Button clicked!', e.type);
+      console.log('Writer Reddit: Button clicked!', e.type);
       
       // Debounce
       if (window._replyforgeClickDebounce) return;
@@ -153,9 +153,9 @@
       handleButtonClick(btn || wrapper.querySelector('.replyforge-btn, .tweetcraft-btn'));
     };
     
-    document.addEventListener('click', handleReplyForgeClick, true);
-    document.addEventListener('pointerdown', handleReplyForgeClick, true);
-    document.addEventListener('mousedown', handleReplyForgeClick, true);
+    document.addEventListener('click', handleWriterClick, true);
+    document.addEventListener('pointerdown', handleWriterClick, true);
+    document.addEventListener('mousedown', handleWriterClick, true);
   }
 
   // Handle button click
@@ -175,7 +175,7 @@
     // Find textarea - try multiple selectors
     let textarea = findTextarea(container);
     
-    console.log('ReplyForge Reddit: Context found', { container: !!container, textarea: !!textarea });
+    console.log('Writer Reddit: Context found', { container: !!container, textarea: !!textarea });
     toggleInlinePanel(textarea, container, btn);
   }
 
@@ -247,9 +247,9 @@
                      composer.querySelector('div');
       
       if (toolbar && !toolbar.querySelector('.replyforge-btn-wrapper')) {
-        const btn = createReplyForgeButton();
+        const btn = createWriterButton();
         toolbar.insertBefore(btn, toolbar.firstChild);
-        console.log('ReplyForge Reddit: Button injected into shreddit-composer');
+        console.log('Writer Reddit: Button injected into shreddit-composer');
       }
     });
 
@@ -268,14 +268,14 @@
                         textarea.parentElement;
       
       if (actionArea && !actionArea.querySelector('.replyforge-btn-wrapper')) {
-        const btn = createReplyForgeButton();
+        const btn = createWriterButton();
         // Try to insert near the beginning
         if (actionArea.firstChild) {
           actionArea.insertBefore(btn, actionArea.firstChild);
         } else {
           actionArea.appendChild(btn);
         }
-        console.log('ReplyForge Reddit: Button injected into faceplate-form');
+        console.log('Writer Reddit: Button injected into faceplate-form');
       }
     });
 
@@ -292,9 +292,9 @@
                      container.querySelector('footer');
       
       if (toolbar && !toolbar.querySelector('.replyforge-btn-wrapper')) {
-        const btn = createReplyForgeButton();
+        const btn = createWriterButton();
         toolbar.insertBefore(btn, toolbar.firstChild);
-        console.log('ReplyForge Reddit: Button injected into comment container');
+        console.log('Writer Reddit: Button injected into comment container');
       }
     });
 
@@ -311,9 +311,9 @@
                         form.querySelector('[class*="actions"]');
       
       if (buttonArea && !buttonArea.querySelector('.replyforge-btn-wrapper')) {
-        const btn = createReplyForgeButton();
+        const btn = createWriterButton();
         buttonArea.insertBefore(btn, buttonArea.firstChild);
-        console.log('ReplyForge Reddit: Button injected into generic form');
+        console.log('Writer Reddit: Button injected into generic form');
       }
     });
 
@@ -329,9 +329,9 @@
                      textarea.parentElement;
       
       if (toolbar && !toolbar.querySelector('.replyforge-btn-wrapper')) {
-        const btn = createReplyForgeButton();
+        const btn = createWriterButton();
         toolbar.insertBefore(btn, toolbar.firstChild);
-        console.log('ReplyForge Reddit: Button injected into post composer');
+        console.log('Writer Reddit: Button injected into post composer');
       }
     });
   }
@@ -348,10 +348,10 @@
                         editor;
       
       if (bottomArea && !bottomArea.querySelector('.replyforge-btn-wrapper')) {
-        const btn = createReplyForgeButton();
+        const btn = createWriterButton();
         btn.style.marginBottom = '8px';
         bottomArea.insertBefore(btn, bottomArea.firstChild);
-        console.log('ReplyForge Reddit: Button injected (old Reddit)');
+        console.log('Writer Reddit: Button injected (old Reddit)');
       }
     });
 
@@ -366,10 +366,10 @@
                         editor.querySelector('.usertext-buttons');
       
       if (bottomArea && !bottomArea.querySelector('.replyforge-btn-wrapper')) {
-        const btn = createReplyForgeButton();
+        const btn = createWriterButton();
         btn.style.marginBottom = '8px';
         bottomArea.insertBefore(btn, bottomArea.firstChild);
-        console.log('ReplyForge Reddit: Button injected (old Reddit comment)');
+        console.log('Writer Reddit: Button injected (old Reddit comment)');
       }
     });
 
@@ -382,17 +382,17 @@
       
       const container = textarea.parentElement;
       if (container && !container.querySelector('.replyforge-btn-wrapper')) {
-        const btn = createReplyForgeButton();
+        const btn = createWriterButton();
         btn.style.marginTop = '8px';
         btn.style.marginBottom = '8px';
         container.insertBefore(btn, textarea.nextSibling);
-        console.log('ReplyForge Reddit: Button injected (old Reddit submit)');
+        console.log('Writer Reddit: Button injected (old Reddit submit)');
       }
     });
   }
 
-  // Create ReplyForge button
-  function createReplyForgeButton() {
+  // Create Writer AI button
+  function createWriterButton() {
     const wrapper = document.createElement('div');
     // Use both class names for compatibility
     wrapper.className = 'replyforge-btn-wrapper tweetcraft-btn-wrapper';
@@ -401,7 +401,7 @@
     const btn = document.createElement('button');
     btn.className = 'replyforge-btn tweetcraft-btn';
     btn.type = 'button';
-    btn.title = 'Generate AI Reply with ReplyForge';
+    btn.title = 'Generate AI Reply with Writer AI';
     btn.setAttribute('aria-label', 'Generate AI Reply');
     btn.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -455,7 +455,7 @@
     panel.style.boxShadow = '0 8px 32px rgba(0,0,0,0.3)';
     
     document.body.appendChild(panel);
-    console.log('ReplyForge Reddit: Panel added');
+    console.log('Writer Reddit: Panel added');
 
     requestAnimationFrame(() => panel.classList.add('visible'));
     
@@ -500,7 +500,7 @@
             <path d="M2 17L12 22L22 17"/>
             <path d="M2 12L12 17L22 12"/>
           </svg>
-          <span>ReplyForge AI</span>
+          <span>Writer AI</span>
           <span class="tweetcraft-platform-badge">Reddit</span>
         </div>
         <button class="tweetcraft-panel-close" title="Close">×</button>
@@ -695,7 +695,7 @@
       renderResults(resultsContainer);
 
     } catch (error) {
-      console.error('ReplyForge Reddit error:', error);
+      console.error('Writer Reddit error:', error);
       
       if (state.contextInvalidated || 
           error.message?.includes('Extension context invalidated') || 

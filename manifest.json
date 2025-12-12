@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "ReplyForge AI",
+  "name": "Writer AI",
   "version": "1.1.0",
   "description": "AI-powered reply assistant for Twitter/X and Reddit using OpenAI or Anthropic APIs",
   "permissions": [

@@ -1,8 +1,8 @@
-# ReplyForge AI 🔥
+# Writer AI ✍️
 
 A Chrome extension that helps you craft intelligent, personalized replies using AI (OpenAI GPT or Anthropic Claude) on Twitter/X and Reddit.
 
-![ReplyForge AI](https://img.shields.io/badge/ReplyForge-AI%20Powered-6366f1?style=for-the-badge)
+![Writer AI](https://img.shields.io/badge/Writer-AI%20Powered-6366f1?style=for-the-badge)
 ![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285f4?style=for-the-badge&logo=googlechrome&logoColor=white)
 
 ## ✨ Features
@@ -51,11 +51,11 @@ node scripts/generate-icons.js
 2. Enable **Developer mode** (toggle in top right)
 3. Click **Load unpacked**
 4. Select the folder containing `manifest.json`
-5. The ReplyForge AI icon should appear in your extensions bar
+5. The Writer AI icon should appear in your extensions bar
 
 ## ⚙️ Configuration
 
-1. Click the ReplyForge AI icon in your Chrome toolbar
+1. Click the Writer AI icon in your Chrome toolbar
 2. Select your **AI Provider** (Anthropic or OpenAI)
 3. Enter your **API Key**:
    - For Anthropic: Get your key at [console.anthropic.com](https://console.anthropic.com/)
@@ -71,7 +71,7 @@ node scripts/generate-icons.js
 
 1. Navigate to [twitter.com](https://twitter.com) or [x.com](https://x.com)
 2. Click on any tweet to view it
-3. Look for the **ReplyForge button** (purple gradient icon) in the reply toolbar
+3. Look for the **Writer AI button** (purple gradient icon) in the reply toolbar
 4. Click it to open the reply generator
 5. The extension will:
    - Analyze the original tweet (including images)
@@ -86,7 +86,7 @@ node scripts/generate-icons.js
 1. Navigate to [reddit.com](https://www.reddit.com) or [old.reddit.com](https://old.reddit.com)
 2. Find a post or comment you want to reply to
 3. Click the **reply** button to open the comment form
-4. Look for the **ReplyForge button** (purple gradient icon) near the text area
+4. Look for the **Writer AI button** (purple gradient icon) near the text area
 5. Click it to open the reply generator
 6. The extension will:
    - Analyze the post title and content

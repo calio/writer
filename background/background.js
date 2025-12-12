@@ -1,4 +1,4 @@
-// ReplyForge AI - Background Service Worker
+// Writer AI - Background Service Worker
 // Handles LLM API calls and message routing
 
 // Listen for messages from content scripts and popup
@@ -249,6 +249,6 @@ function parseReplies(content, numCandidates, platform = 'twitter') {
 
 // Keep service worker alive
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('ReplyForge AI installed');
+  console.log('Writer AI installed');
 });
 

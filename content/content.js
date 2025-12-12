@@ -1,0 +1,555 @@
+// TweetCraft AI - Content Script
+// Integrates with Twitter/X UI to provide AI-powered reply assistance
+
+(function() {
+  'use strict';
+
+  // State
+  let state = {
+    candidates: [],
+    selectedIndex: 0,
+    isLoading: false,
+    currentTextarea: null,
+    currentPanel: null,
+    userHistory: []
+  };
+
+  // Initialize
+  function init() {
+    console.log('TweetCraft: Initializing...');
+    observeDOM();
+    loadUserHistory();
+  }
+
+  // Observe DOM for compose areas
+  function observeDOM() {
+    const observer = new MutationObserver(() => {
+      clearTimeout(window.tweetcraftDebounce);
+      window.tweetcraftDebounce = setTimeout(injectButtons, 100);
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+
+    setTimeout(injectButtons, 500);
+    setTimeout(injectButtons, 1500);
+  }
+
+  // Inject TweetCraft buttons
+  function injectButtons() {
+    const mediaInputs = document.querySelectorAll('input[data-testid="fileInput"]');
+    mediaInputs.forEach(input => {
+      let toolbar = input.closest('[role="group"]') || input.closest('[role="tablist"]');
+      if (!toolbar) toolbar = input.parentElement?.parentElement?.parentElement;
+      if (!toolbar || toolbar.querySelector('.tweetcraft-btn-wrapper')) return;
+
+      const btn = createTweetCraftButton();
+      
+      const mediaBtn = toolbar.querySelector('[aria-label="Add photos or video"]');
+      if (mediaBtn && mediaBtn.parentElement) {
+        mediaBtn.parentElement.insertBefore(btn, mediaBtn);
+      } else {
+        const firstBtn = toolbar.querySelector('button:not([disabled])');
+        if (firstBtn && firstBtn.parentElement) {
+          firstBtn.parentElement.insertBefore(btn, firstBtn);
+        }
+      }
+    });
+  }
+
+  // Create TweetCraft button
+  function createTweetCraftButton() {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tweetcraft-btn-wrapper';
+    wrapper.style.cssText = 'display: inline-flex; align-items: center; justify-content: center;';
+    
+    const btn = document.createElement('div');
+    btn.className = 'tweetcraft-btn';
+    btn.title = 'Generate AI Reply';
+    btn.setAttribute('role', 'button');
+    btn.setAttribute('tabindex', '0');
+    btn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2L2 7L12 12L22 7L12 2Z"/>
+        <path d="M2 17L12 22L22 17"/>
+        <path d="M2 12L12 17L22 12"/>
+      </svg>
+    `;
+
+    let clickHandled = false;
+    
+    const handleClick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      
+      // Prevent double-handling
+      if (clickHandled) return;
+      clickHandled = true;
+      setTimeout(() => { clickHandled = false; }, 300);
+      
+      console.log('TweetCraft: Button clicked!');
+      
+      // Find container and textarea fresh at click time
+      const toolbar = wrapper.closest('[role="group"]') || wrapper.closest('[role="tablist"]') || wrapper.closest('nav');
+      const container = toolbar?.closest('form') || 
+                       toolbar?.closest('[role="dialog"]') || 
+                       toolbar?.closest('[data-testid="tweetTextarea_0"]')?.parentElement?.parentElement ||
+                       toolbar?.parentElement?.parentElement;
+      
+      // Try multiple ways to find the textarea
+      let textarea = container?.querySelector('[data-testid="tweetTextarea_0"], [data-testid="tweetTextarea_1"], [role="textbox"]');
+      
+      // If not found in container, search up and around the toolbar
+      if (!textarea) {
+        const parentContainer = toolbar?.closest('[data-testid="primaryColumn"]') || 
+                               toolbar?.closest('[role="dialog"]') ||
+                               toolbar?.parentElement?.parentElement?.parentElement;
+        textarea = parentContainer?.querySelector('[data-testid="tweetTextarea_0"], [data-testid="tweetTextarea_1"], [role="textbox"]');
+      }
+      
+      // Last resort - find any visible textarea on the page
+      if (!textarea) {
+        textarea = document.querySelector('[data-testid="tweetTextarea_0"]') || 
+                  document.querySelector('[role="dialog"] [role="textbox"]');
+      }
+      
+      console.log('TweetCraft: Context found', { toolbar: !!toolbar, container: !!container, textarea: !!textarea });
+      toggleInlinePanel(textarea, container, btn);
+    };
+
+    // Only use click handler - simpler is better
+    btn.addEventListener('click', handleClick, true);
+    btn.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }, true);
+
+    wrapper.appendChild(btn);
+    return wrapper;
+  }
+
+  // Toggle inline panel
+  function toggleInlinePanel(textarea, container, btn) {
+    // Remove existing panel if any
+    const existingPanel = document.querySelector('.tweetcraft-inline-panel');
+    if (existingPanel) {
+      existingPanel.remove();
+      state.currentPanel = null;
+      document.querySelectorAll('.tweetcraft-btn.active, .tweetcraft-btn-wrapper .tweetcraft-btn.active').forEach(b => b.classList.remove('active'));
+      return;
+    }
+
+    state.currentTextarea = textarea;
+    btn.classList.add('active');
+    
+    // Create panel as a fixed overlay
+    const panel = createInlinePanel(container);
+    state.currentPanel = panel;
+
+    // Get button position for panel placement
+    const wrapper = btn.closest('.tweetcraft-btn-wrapper') || btn;
+    const rect = wrapper.getBoundingClientRect();
+    
+    // Calculate center position
+    const panelWidth = 450;
+    const viewportWidth = window.innerWidth;
+    let leftPos = rect.left + (rect.width / 2) - (panelWidth / 2);
+    
+    // Keep panel within viewport
+    leftPos = Math.max(10, Math.min(leftPos, viewportWidth - panelWidth - 10));
+    
+    // Position panel below the toolbar
+    panel.style.position = 'fixed';
+    panel.style.left = `${leftPos}px`;
+    panel.style.top = `${Math.min(rect.bottom + 10, window.innerHeight - 400)}px`;
+    panel.style.width = `${panelWidth}px`;
+    panel.style.maxWidth = 'calc(100vw - 20px)';
+    panel.style.maxHeight = 'calc(100vh - 100px)';
+    panel.style.overflowY = 'auto';
+    panel.style.zIndex = '10000';
+    panel.style.boxShadow = '0 8px 32px rgba(0,0,0,0.3)';
+    
+    // Append to body to avoid Twitter's DOM manipulation
+    document.body.appendChild(panel);
+    console.log('TweetCraft: Panel added to body as fixed overlay');
+
+    // Animate in
+    requestAnimationFrame(() => panel.classList.add('visible'));
+    
+    // Close when clicking outside
+    const closeOnClickOutside = (e) => {
+      if (!panel.contains(e.target) && !btn.contains(e.target) && !wrapper.contains(e.target)) {
+        panel.classList.remove('visible');
+        setTimeout(() => {
+          panel.remove();
+          state.currentPanel = null;
+          btn.classList.remove('active');
+        }, 200);
+        document.removeEventListener('click', closeOnClickOutside);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closeOnClickOutside), 100);
+  }
+
+  // Create inline panel
+  function createInlinePanel(container) {
+    const originalTweet = extractOriginalTweet(container);
+    const imageUrls = extractTweetImages(container);
+
+    const panel = document.createElement('div');
+    panel.className = 'tweetcraft-inline-panel';
+    panel.innerHTML = `
+      <div class="tweetcraft-panel-header">
+        <div class="tweetcraft-panel-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7L12 12L22 7L12 2Z"/>
+            <path d="M2 17L12 22L22 17"/>
+            <path d="M2 12L12 17L22 12"/>
+          </svg>
+          <span>TweetCraft AI</span>
+          ${imageUrls.length > 0 ? `<span class="tweetcraft-vision-badge">📷 ${imageUrls.length} image${imageUrls.length > 1 ? 's' : ''}</span>` : ''}
+        </div>
+        <button class="tweetcraft-panel-close" title="Close">×</button>
+      </div>
+      
+      <div class="tweetcraft-tone-row">
+        <button class="tweetcraft-tone-chip active" data-tone="match">Match Style</button>
+        <button class="tweetcraft-tone-chip" data-tone="professional">Pro</button>
+        <button class="tweetcraft-tone-chip" data-tone="casual">Casual</button>
+        <button class="tweetcraft-tone-chip" data-tone="witty">Witty</button>
+        <button class="tweetcraft-tone-chip" data-tone="thoughtful">Deep</button>
+      </div>
+
+      <div class="tweetcraft-feedback-row">
+        <input type="text" class="tweetcraft-feedback-input" placeholder="Instructions: e.g., make it shorter, add a question..." />
+        <button class="tweetcraft-generate-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+          </svg>
+          Generate
+        </button>
+      </div>
+
+      <div class="tweetcraft-results" id="tweetcraft-results">
+        <div class="tweetcraft-empty">Click "Generate" to create AI-powered replies</div>
+      </div>
+    `;
+
+    // Store data
+    panel.dataset.originalTweet = originalTweet;
+    panel.dataset.imageUrls = JSON.stringify(imageUrls);
+    panel.dataset.tone = 'match';
+
+    // Setup event listeners
+    setupPanelListeners(panel);
+
+    return panel;
+  }
+
+  // Setup panel event listeners
+  function setupPanelListeners(panel) {
+    // Close button
+    panel.querySelector('.tweetcraft-panel-close').addEventListener('click', () => {
+      panel.classList.remove('visible');
+      setTimeout(() => {
+        panel.remove();
+        state.currentPanel = null;
+        document.querySelectorAll('.tweetcraft-btn.active').forEach(b => b.classList.remove('active'));
+      }, 200);
+    });
+
+    // Tone chips
+    panel.querySelectorAll('.tweetcraft-tone-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        panel.querySelectorAll('.tweetcraft-tone-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        panel.dataset.tone = chip.dataset.tone;
+      });
+    });
+
+    // Generate button
+    panel.querySelector('.tweetcraft-generate-btn').addEventListener('click', () => {
+      generateReplies(panel);
+    });
+
+    // Enter key in feedback input
+    panel.querySelector('.tweetcraft-feedback-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        generateReplies(panel);
+      }
+    });
+  }
+
+  // Extract original tweet text
+  function extractOriginalTweet(container) {
+    // Try to find the tweet we're replying to
+    const article = container?.closest('article') || document.querySelector('article[data-testid="tweet"]');
+    if (article) {
+      const tweetText = article.querySelector('[data-testid="tweetText"]');
+      if (tweetText) return tweetText.innerText;
+    }
+
+    // Look in dialogs for quoted tweet
+    const dialog = container?.closest('[role="dialog"]');
+    if (dialog) {
+      const tweetText = dialog.querySelector('[data-testid="tweetText"]');
+      if (tweetText) return tweetText.innerText;
+    }
+
+    return '';
+  }
+
+  // Extract images from tweet
+  function extractTweetImages(container) {
+    const imageUrls = [];
+    
+    // Find the tweet article
+    const article = container?.closest('article') || document.querySelector('article[data-testid="tweet"]');
+    const dialog = container?.closest('[role="dialog"]');
+    const searchContainer = dialog || article;
+    
+    if (!searchContainer) return imageUrls;
+
+    // Find images
+    const images = searchContainer.querySelectorAll('img[src*="pbs.twimg.com/media"], img[src*="twimg.com/media"]');
+    images.forEach(img => {
+      let src = img.src;
+      // Get higher quality version
+      if (src.includes('name=')) {
+        src = src.replace(/name=\w+/, 'name=large');
+      }
+      if (!imageUrls.includes(src)) {
+        imageUrls.push(src);
+      }
+    });
+
+    // Find video thumbnails
+    const videoThumbs = searchContainer.querySelectorAll('video[poster]');
+    videoThumbs.forEach(video => {
+      if (video.poster && !imageUrls.includes(video.poster)) {
+        imageUrls.push(video.poster);
+      }
+    });
+
+    return imageUrls.slice(0, 4); // Limit to 4 images
+  }
+
+  // Generate replies
+  async function generateReplies(panel) {
+    const resultsContainer = panel.querySelector('#tweetcraft-results');
+    const generateBtn = panel.querySelector('.tweetcraft-generate-btn');
+    const feedback = panel.querySelector('.tweetcraft-feedback-input').value;
+    const tone = panel.dataset.tone;
+    const originalTweet = panel.dataset.originalTweet;
+    const imageUrls = JSON.parse(panel.dataset.imageUrls || '[]');
+
+    // Show loading
+    state.isLoading = true;
+    generateBtn.disabled = true;
+    generateBtn.innerHTML = `
+      <svg class="spinning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+      </svg>
+      Generating...
+    `;
+    resultsContainer.innerHTML = `
+      <div class="tweetcraft-loading">
+        <div class="tweetcraft-spinner"></div>
+        <span>Crafting replies...</span>
+      </div>
+    `;
+
+    try {
+      const settings = await chrome.storage.local.get(['candidates', 'useHistory']);
+      
+      let context = '';
+      if (settings.useHistory !== false && state.userHistory.length > 0) {
+        context = `\n\nUser's previous tweets for style reference:\n${state.userHistory.slice(0, 5).map((t, i) => `${i + 1}. "${t}"`).join('\n')}`;
+      }
+
+      const response = await chrome.runtime.sendMessage({
+        type: 'GENERATE_REPLIES',
+        payload: {
+          originalTweet,
+          tone,
+          context,
+          feedback,
+          numCandidates: settings.candidates || 3,
+          imageUrls
+        }
+      });
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      state.candidates = response.candidates || [];
+      state.selectedIndex = 0;
+      renderResults(resultsContainer);
+
+    } catch (error) {
+      console.error('TweetCraft error:', error);
+      resultsContainer.innerHTML = `
+        <div class="tweetcraft-error">
+          <span>⚠️ ${error.message}</span>
+          <button class="tweetcraft-retry-btn">Retry</button>
+        </div>
+      `;
+      resultsContainer.querySelector('.tweetcraft-retry-btn')?.addEventListener('click', () => generateReplies(panel));
+    } finally {
+      state.isLoading = false;
+      generateBtn.disabled = false;
+      generateBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+        </svg>
+        Generate
+      `;
+    }
+  }
+
+  // Render results
+  function renderResults(container) {
+    if (state.candidates.length === 0) {
+      container.innerHTML = `<div class="tweetcraft-empty">No replies generated. Try again with different instructions.</div>`;
+      return;
+    }
+
+    container.innerHTML = state.candidates.map((text, i) => `
+      <div class="tweetcraft-result ${i === state.selectedIndex ? 'selected' : ''}" data-index="${i}">
+        <div class="tweetcraft-result-text">${escapeHtml(text)}</div>
+        <div class="tweetcraft-result-footer">
+          <span class="tweetcraft-char-count ${text.length > 280 ? 'over' : ''}">${text.length}/280</span>
+          <button class="tweetcraft-use-btn" data-index="${i}">Use this</button>
+        </div>
+      </div>
+    `).join('');
+
+    // Click to select
+    container.querySelectorAll('.tweetcraft-result').forEach(result => {
+      result.addEventListener('click', (e) => {
+        if (e.target.closest('.tweetcraft-use-btn')) return;
+        container.querySelectorAll('.tweetcraft-result').forEach(r => r.classList.remove('selected'));
+        result.classList.add('selected');
+        state.selectedIndex = parseInt(result.dataset.index);
+      });
+    });
+
+    // Use buttons
+    container.querySelectorAll('.tweetcraft-use-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const index = parseInt(btn.dataset.index);
+        useReply(state.candidates[index]);
+      });
+    });
+  }
+
+  // Use selected reply
+  function useReply(text) {
+    if (!text) return;
+
+    // Find the textarea if not already set
+    let editable = state.currentTextarea;
+    
+    // If no textarea stored, find it fresh
+    if (!editable) {
+      editable = document.querySelector('[role="dialog"] [data-testid="tweetTextarea_0"]') ||
+                document.querySelector('[role="dialog"] [role="textbox"]') ||
+                document.querySelector('[data-testid="tweetTextarea_0"]') ||
+                document.querySelector('[role="textbox"]');
+    }
+
+    // Find the actual editable element
+    if (editable && !editable.isContentEditable) {
+      editable = editable.closest('[role="textbox"]') || 
+                 editable.querySelector('[data-text="true"]') ||
+                 document.activeElement;
+    }
+
+    if (editable) {
+      // Focus and select all
+      editable.focus();
+      
+      // Try multiple methods to insert text
+      if (document.execCommand) {
+        document.execCommand('selectAll', false, null);
+        document.execCommand('insertText', false, text);
+      } else {
+        editable.textContent = text;
+        editable.dispatchEvent(new InputEvent('input', { bubbles: true, data: text }));
+      }
+      
+      // Dispatch additional events for React
+      editable.dispatchEvent(new Event('input', { bubbles: true }));
+      editable.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    // Close panel
+    if (state.currentPanel) {
+      state.currentPanel.classList.remove('visible');
+      setTimeout(() => {
+        state.currentPanel?.remove();
+        state.currentPanel = null;
+        document.querySelectorAll('.tweetcraft-btn.active').forEach(b => b.classList.remove('active'));
+      }, 200);
+    }
+  }
+
+  // Load user history
+  async function loadUserHistory() {
+    try {
+      const cached = await chrome.storage.local.get(['userHistory', 'historyTimestamp']);
+      if (cached.userHistory && cached.historyTimestamp) {
+        const age = Date.now() - cached.historyTimestamp;
+        if (age < 60 * 60 * 1000) {
+          state.userHistory = cached.userHistory;
+          return;
+        }
+      }
+      state.userHistory = scrapeUserTweets();
+      await chrome.storage.local.set({
+        userHistory: state.userHistory,
+        historyTimestamp: Date.now()
+      });
+    } catch (error) {
+      console.log('TweetCraft: Could not load history', error);
+    }
+  }
+
+  // Scrape user tweets
+  function scrapeUserTweets() {
+    const tweets = [];
+    const userHandle = getCurrentUserHandle();
+    document.querySelectorAll('article[data-testid="tweet"]').forEach(tweet => {
+      const handle = tweet.querySelector('[data-testid="User-Name"] a[href^="/"]')?.getAttribute('href')?.replace('/', '');
+      const text = tweet.querySelector('[data-testid="tweetText"]')?.innerText?.trim();
+      if (handle === userHandle && text) tweets.push(text);
+    });
+    return tweets.slice(0, 20);
+  }
+
+  // Get current user handle
+  function getCurrentUserHandle() {
+    const link = document.querySelector('[data-testid="AppTabBar_Profile_Link"]');
+    return link?.getAttribute('href')?.replace('/', '') || null;
+  }
+
+  // Escape HTML
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // Initialize
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+})();

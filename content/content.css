@@ -15,7 +15,7 @@
   --tc-error: #f4212e;
 }
 
-/* Main Button */
+/* Main Button - using actual button element */
 .tweetcraft-btn {
   display: inline-flex !important;
   align-items: center !important;
@@ -26,13 +26,18 @@
   min-height: 34px !important;
   border: none !important;
   border-radius: 50% !important;
-  background: var(--tc-gradient) !important;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
   cursor: pointer !important;
   transition: all 0.15s ease !important;
   box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4) !important;
   margin: 0 4px 0 0 !important;
   padding: 0 !important;
   flex-shrink: 0 !important;
+  outline: none !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  font: inherit !important;
+  position: relative !important;
 }
 
 .tweetcraft-btn:hover {

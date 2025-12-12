@@ -45,9 +45,76 @@
   // Initialize
   function init() {
     console.log('TweetCraft: Initializing...');
+    
+    // Remove any stale buttons from previous extension loads
+    document.querySelectorAll('.tweetcraft-btn-wrapper').forEach(el => el.remove());
+    document.querySelectorAll('.tweetcraft-inline-panel').forEach(el => el.remove());
+    
     loadPanelState(); // Load persisted state
+    setupGlobalClickHandler(); // Use event delegation for reliable click handling
     observeDOM();
     loadUserHistory();
+  }
+  
+  // Global click handler using event delegation
+  function setupGlobalClickHandler() {
+    // Use multiple event types to ensure we catch the click
+    const handleTweetCraftClick = (e) => {
+      const btn = e.target.closest('.tweetcraft-btn');
+      const wrapper = e.target.closest('.tweetcraft-btn-wrapper');
+      
+      if (!btn && !wrapper) return;
+      
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      
+      console.log('TweetCraft: Button clicked via delegation!', e.type);
+      
+      // Debounce to prevent multiple fires
+      if (window._tweetcraftClickDebounce) return;
+      window._tweetcraftClickDebounce = true;
+      setTimeout(() => { window._tweetcraftClickDebounce = false; }, 300);
+      
+      handleButtonClick(btn || wrapper.querySelector('.tweetcraft-btn'));
+    };
+    
+    // Listen on multiple event types at capture phase
+    document.addEventListener('click', handleTweetCraftClick, true);
+    document.addEventListener('pointerdown', handleTweetCraftClick, true);
+    document.addEventListener('mousedown', handleTweetCraftClick, true);
+  }
+  
+  // Handle button click
+  function handleButtonClick(btn) {
+    const wrapper = btn.closest('.tweetcraft-btn-wrapper') || btn.parentElement;
+    
+    // Find container and textarea fresh at click time
+    const toolbar = wrapper.closest('[role="group"]') || wrapper.closest('[role="tablist"]') || wrapper.closest('nav');
+    const container = toolbar?.closest('form') || 
+                     toolbar?.closest('[role="dialog"]') || 
+                     toolbar?.closest('[data-testid="tweetTextarea_0"]')?.parentElement?.parentElement ||
+                     toolbar?.parentElement?.parentElement;
+    
+    // Try multiple ways to find the textarea
+    let textarea = container?.querySelector('[data-testid="tweetTextarea_0"], [data-testid="tweetTextarea_1"], [role="textbox"]');
+    
+    // If not found in container, search up and around the toolbar
+    if (!textarea) {
+      const parentContainer = toolbar?.closest('[data-testid="primaryColumn"]') || 
+                             toolbar?.closest('[role="dialog"]') ||
+                             toolbar?.parentElement?.parentElement?.parentElement;
+      textarea = parentContainer?.querySelector('[data-testid="tweetTextarea_0"], [data-testid="tweetTextarea_1"], [role="textbox"]');
+    }
+    
+    // Last resort - find any visible textarea on the page
+    if (!textarea) {
+      textarea = document.querySelector('[data-testid="tweetTextarea_0"]') || 
+                document.querySelector('[role="dialog"] [role="textbox"]');
+    }
+    
+    console.log('TweetCraft: Context found', { toolbar: !!toolbar, container: !!container, textarea: !!textarea });
+    toggleInlinePanel(textarea, container, btn);
   }
 
   // Load persisted panel state
@@ -129,11 +196,12 @@
     wrapper.className = 'tweetcraft-btn-wrapper';
     wrapper.style.cssText = 'display: inline-flex; align-items: center; justify-content: center;';
     
-    const btn = document.createElement('div');
+    // Use actual button element for better compatibility
+    const btn = document.createElement('button');
     btn.className = 'tweetcraft-btn';
+    btn.type = 'button';
     btn.title = 'Generate AI Reply';
-    btn.setAttribute('role', 'button');
-    btn.setAttribute('tabindex', '0');
+    btn.setAttribute('aria-label', 'Generate AI Reply');
     btn.innerHTML = `
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M12 2L2 7L12 12L22 7L12 2Z"/>
@@ -141,55 +209,9 @@
         <path d="M2 12L12 17L22 12"/>
       </svg>
     `;
-
-    let clickHandled = false;
     
-    const handleClick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      
-      // Prevent double-handling
-      if (clickHandled) return;
-      clickHandled = true;
-      setTimeout(() => { clickHandled = false; }, 300);
-      
-      console.log('TweetCraft: Button clicked!');
-      
-      // Find container and textarea fresh at click time
-      const toolbar = wrapper.closest('[role="group"]') || wrapper.closest('[role="tablist"]') || wrapper.closest('nav');
-      const container = toolbar?.closest('form') || 
-                       toolbar?.closest('[role="dialog"]') || 
-                       toolbar?.closest('[data-testid="tweetTextarea_0"]')?.parentElement?.parentElement ||
-                       toolbar?.parentElement?.parentElement;
-      
-      // Try multiple ways to find the textarea
-      let textarea = container?.querySelector('[data-testid="tweetTextarea_0"], [data-testid="tweetTextarea_1"], [role="textbox"]');
-      
-      // If not found in container, search up and around the toolbar
-      if (!textarea) {
-        const parentContainer = toolbar?.closest('[data-testid="primaryColumn"]') || 
-                               toolbar?.closest('[role="dialog"]') ||
-                               toolbar?.parentElement?.parentElement?.parentElement;
-        textarea = parentContainer?.querySelector('[data-testid="tweetTextarea_0"], [data-testid="tweetTextarea_1"], [role="textbox"]');
-      }
-      
-      // Last resort - find any visible textarea on the page
-      if (!textarea) {
-        textarea = document.querySelector('[data-testid="tweetTextarea_0"]') || 
-                  document.querySelector('[role="dialog"] [role="textbox"]');
-      }
-      
-      console.log('TweetCraft: Context found', { toolbar: !!toolbar, container: !!container, textarea: !!textarea });
-      toggleInlinePanel(textarea, container, btn);
-    };
-
-    // Only use click handler - simpler is better
-    btn.addEventListener('click', handleClick, true);
-    btn.addEventListener('mousedown', (e) => {
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    }, true);
+    // Event handling is done via delegation in setupGlobalClickHandler()
+    // No need to attach listeners here - they would be lost on extension reload anyway
 
     wrapper.appendChild(btn);
     return wrapper;

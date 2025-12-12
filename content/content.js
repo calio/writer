@@ -15,8 +15,32 @@
     // Persisted state
     tone: 'match',
     feedback: '',
-    lastCandidates: []
+    lastCandidates: [],
+    contextInvalidated: false
   };
+
+  // Check if extension context is still valid
+  function isExtensionContextValid() {
+    try {
+      // This will throw if context is invalidated
+      return !!chrome.runtime?.id;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Show context invalidated error
+  function showContextInvalidatedError(container) {
+    state.contextInvalidated = true;
+    if (container) {
+      container.innerHTML = `
+        <div class="tweetcraft-error" style="text-align: center;">
+          <span>🔄 Extension was updated. Please refresh the page to continue.</span>
+          <button class="tweetcraft-retry-btn" onclick="location.reload()">Refresh Page</button>
+        </div>
+      `;
+    }
+  }
 
   // Initialize
   function init() {
@@ -28,6 +52,8 @@
 
   // Load persisted panel state
   async function loadPanelState() {
+    if (!isExtensionContextValid()) return;
+    
     try {
       const saved = await chrome.storage.local.get(['panelTone', 'panelFeedback', 'panelCandidates']);
       if (saved.panelTone) state.tone = saved.panelTone;
@@ -35,12 +61,18 @@
       if (saved.panelCandidates) state.lastCandidates = saved.panelCandidates;
       console.log('TweetCraft: Loaded panel state', { tone: state.tone, feedback: state.feedback?.substring(0, 20) });
     } catch (error) {
+      // Silently fail - extension context may be invalidated
+      if (error.message?.includes('Extension context invalidated')) {
+        state.contextInvalidated = true;
+      }
       console.log('TweetCraft: Could not load panel state', error);
     }
   }
 
   // Save panel state
   async function savePanelState() {
+    if (!isExtensionContextValid()) return;
+    
     try {
       await chrome.storage.local.set({
         panelTone: state.tone,
@@ -48,6 +80,7 @@
         panelCandidates: state.lastCandidates
       });
     } catch (error) {
+      // Silently fail - extension context may be invalidated
       console.log('TweetCraft: Could not save panel state', error);
     }
   }
@@ -427,6 +460,13 @@
   async function generateReplies(panel) {
     const resultsContainer = panel.querySelector('#tweetcraft-results');
     const generateBtn = panel.querySelector('.tweetcraft-generate-btn');
+    
+    // Check if extension context is still valid
+    if (!isExtensionContextValid()) {
+      showContextInvalidatedError(resultsContainer);
+      return;
+    }
+    
     const feedback = panel.querySelector('.tweetcraft-feedback-input').value;
     const tone = panel.dataset.tone;
     const originalTweet = panel.dataset.originalTweet;
@@ -480,13 +520,23 @@
 
     } catch (error) {
       console.error('TweetCraft error:', error);
-      resultsContainer.innerHTML = `
-        <div class="tweetcraft-error">
-          <span>⚠️ ${error.message}</span>
-          <button class="tweetcraft-retry-btn">Retry</button>
-        </div>
-      `;
-      resultsContainer.querySelector('.tweetcraft-retry-btn')?.addEventListener('click', () => generateReplies(panel));
+      
+      // Check if it's a context invalidation error
+      const isContextError = error.message?.includes('Extension context invalidated') || 
+                            error.message?.includes('context invalidated') ||
+                            !isExtensionContextValid();
+      
+      if (isContextError) {
+        showContextInvalidatedError(resultsContainer);
+      } else {
+        resultsContainer.innerHTML = `
+          <div class="tweetcraft-error">
+            <span>⚠️ ${error.message}</span>
+            <button class="tweetcraft-retry-btn">Retry</button>
+          </div>
+        `;
+        resultsContainer.querySelector('.tweetcraft-retry-btn')?.addEventListener('click', () => generateReplies(panel));
+      }
     } finally {
       state.isLoading = false;
       generateBtn.disabled = false;
@@ -593,6 +643,8 @@
 
   // Load user history
   async function loadUserHistory() {
+    if (!isExtensionContextValid()) return;
+    
     try {
       const cached = await chrome.storage.local.get(['userHistory', 'historyTimestamp']);
       if (cached.userHistory && cached.historyTimestamp) {
@@ -608,6 +660,7 @@
         historyTimestamp: Date.now()
       });
     } catch (error) {
+      // Silently fail - extension context may be invalidated
       console.log('TweetCraft: Could not load history', error);
     }
   }

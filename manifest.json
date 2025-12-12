@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "TweetCraft AI",
-  "version": "1.0.0",
-  "description": "AI-powered tweet reply assistant using OpenAI or Anthropic APIs",
+  "name": "ReplyForge AI",
+  "version": "1.1.0",
+  "description": "AI-powered reply assistant for Twitter/X and Reddit using OpenAI or Anthropic APIs",
   "permissions": [
     "storage",
     "activeTab"
@@ -10,6 +10,8 @@
   "host_permissions": [
     "https://twitter.com/*",
     "https://x.com/*",
+    "https://www.reddit.com/*",
+    "https://old.reddit.com/*",
     "https://api.openai.com/*",
     "https://api.anthropic.com/*"
   ],
@@ -21,6 +23,12 @@
     {
       "matches": ["https://twitter.com/*", "https://x.com/*"],
       "js": ["content/content.js"],
+      "css": ["content/content.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.reddit.com/*", "https://old.reddit.com/*"],
+      "js": ["content/reddit.js"],
       "css": ["content/content.css"],
       "run_at": "document_idle"
     }

@@ -1,7 +1,8 @@
-/* TweetCraft AI - Inline UI Styles */
+/* ReplyForge AI - Inline UI Styles */
 
 /* Variables */
-.tweetcraft-inline-panel {
+.tweetcraft-inline-panel,
+.replyforge-inline-panel {
   --tc-bg: #16181c;
   --tc-bg-secondary: #1d1f23;
   --tc-bg-hover: #2c2f33;
@@ -16,7 +17,8 @@
 }
 
 /* Main Button - using actual button element */
-.tweetcraft-btn {
+.tweetcraft-btn,
+.replyforge-btn {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -40,16 +42,19 @@
   position: relative !important;
 }
 
-.tweetcraft-btn:hover {
+.tweetcraft-btn:hover,
+.replyforge-btn:hover {
   transform: scale(1.08) !important;
   box-shadow: 0 4px 12px rgba(99, 102, 241, 0.5) !important;
 }
 
-.tweetcraft-btn.active {
+.tweetcraft-btn.active,
+.replyforge-btn.active {
   box-shadow: 0 0 0 2px var(--tc-accent), 0 4px 12px rgba(99, 102, 241, 0.5) !important;
 }
 
-.tweetcraft-btn svg {
+.tweetcraft-btn svg,
+.replyforge-btn svg {
   width: 17px !important;
   height: 17px !important;
   color: white !important;
@@ -106,6 +111,17 @@
   background: rgba(99, 102, 241, 0.2);
   border-radius: 10px;
   color: var(--tc-accent);
+}
+
+.tweetcraft-platform-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  background: linear-gradient(135deg, #ff4500 0%, #ff5722 100%);
+  border-radius: 10px;
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .tweetcraft-panel-close {
@@ -383,7 +399,8 @@
 }
 
 /* Better button wrapper styling */
-.tweetcraft-btn-wrapper {
+.tweetcraft-btn-wrapper,
+.replyforge-btn-wrapper {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -391,7 +408,8 @@
 }
 
 /* Pulse animation on button */
-.tweetcraft-btn::before {
+.tweetcraft-btn::before,
+.replyforge-btn::before {
   content: '';
   position: absolute;
   inset: -2px;
@@ -408,7 +426,8 @@
   50% { transform: scale(1.1); opacity: 0.3; }
 }
 
-.tweetcraft-btn:hover::before {
+.tweetcraft-btn:hover::before,
+.replyforge-btn:hover::before {
   opacity: 0;
 }
 

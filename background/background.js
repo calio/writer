@@ -1,4 +1,4 @@
-// TweetCraft AI - Background Service Worker
+// ReplyForge AI - Background Service Worker
 // Handles LLM API calls and message routing
 
 // Listen for messages from content scripts and popup
@@ -13,7 +13,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Handle reply generation
 async function handleGenerateReplies(payload) {
-  const { originalTweet, tone, context, feedback, numCandidates, imageUrls = [] } = payload;
+  const { originalTweet, tone, context, feedback, numCandidates, imageUrls = [], platform = 'twitter' } = payload;
   
   // Get settings
   const settings = await chrome.storage.local.get(['provider', 'apiKey', 'model']);
@@ -25,52 +25,59 @@ async function handleGenerateReplies(payload) {
   const provider = settings.provider || 'anthropic';
   const model = settings.model || (provider === 'anthropic' ? 'claude-sonnet-4-5-20241022' : 'gpt-5.2-2025-12-11');
 
-  // Build the prompt
-  const prompt = buildPrompt(originalTweet, tone, context, feedback, numCandidates, imageUrls.length > 0);
+  // Build the prompt based on platform
+  const prompt = buildPrompt(originalTweet, tone, context, feedback, numCandidates, imageUrls.length > 0, platform);
 
   // Call the appropriate API
   let candidates;
   if (provider === 'anthropic') {
-    candidates = await callAnthropicAPI(settings.apiKey, model, prompt, numCandidates, imageUrls);
+    candidates = await callAnthropicAPI(settings.apiKey, model, prompt, numCandidates, imageUrls, platform);
   } else {
-    candidates = await callOpenAIAPI(settings.apiKey, model, prompt, numCandidates, imageUrls);
+    candidates = await callOpenAIAPI(settings.apiKey, model, prompt, numCandidates, imageUrls, platform);
   }
 
   return { candidates };
 }
 
 // Build the prompt for reply generation
-function buildPrompt(originalTweet, tone, context, feedback, numCandidates, hasImages = false) {
+function buildPrompt(originalTweet, tone, context, feedback, numCandidates, hasImages = false, platform = 'twitter') {
   const toneDescriptions = {
-    match: 'Match the style and voice of the user\'s previous tweets',
+    match: 'Match the style and voice of the user\'s previous posts',
     professional: 'Professional, polished, and business-appropriate',
     casual: 'Casual, friendly, and conversational',
     witty: 'Witty, clever, and humorous (but not trying too hard)',
     thoughtful: 'Thoughtful, insightful, and adds value to the conversation'
   };
 
-  let prompt = `You are a social media writing assistant helping compose Twitter/X replies.
+  const isReddit = platform === 'reddit';
+  const platformName = isReddit ? 'Reddit' : 'Twitter/X';
+  const contentType = isReddit ? 'post/comment' : 'tweet';
+  
+  let prompt = `You are a social media writing assistant helping compose ${platformName} replies.
 
-TASK: Generate ${numCandidates} different reply options for the following tweet.
+TASK: Generate ${numCandidates} different reply options for the following ${contentType}.
 
-ORIGINAL TWEET TO REPLY TO:
-"${originalTweet || 'No specific tweet provided - generate original tweets'}"
-${hasImages ? '\n[This tweet also contains images/media which are provided for context. Consider the visual content in your reply.]' : ''}
+ORIGINAL ${contentType.toUpperCase()} TO REPLY TO:
+"${originalTweet || `No specific ${contentType} provided - generate original content`}"
+${hasImages ? `\n[This ${contentType} also contains images/media which are provided for context. Consider the visual content in your reply.]` : ''}
 
 TONE: ${toneDescriptions[tone] || toneDescriptions.match}
 ${context ? `\nUSER'S WRITING STYLE REFERENCE:${context}` : ''}
 ${feedback ? `\nADDITIONAL INSTRUCTIONS FROM USER: ${feedback}` : ''}
 
 REQUIREMENTS:
-1. Each reply MUST be under 280 characters (Twitter's limit)
-2. Make replies feel natural and human - avoid obvious AI patterns
-3. Each reply should be notably different from the others
-4. Match the energy and context of the original tweet
-5. Be engaging and encourage conversation when appropriate
-6. Avoid generic phrases like "Great point!" or "Couldn't agree more!"
-7. Don't use hashtags unless specifically relevant
-8. Don't use emojis unless the tone calls for it
-${hasImages ? '9. Reference or react to the visual content if relevant' : ''}
+${isReddit ? `1. Replies can be longer - Reddit allows detailed responses (aim for 1-4 sentences unless the topic warrants more)
+2. Reddit culture values substantive contributions - add value with insights, experiences, or questions` : `1. Each reply MUST be under 280 characters (Twitter's limit)
+2. Make replies concise and punchy`}
+3. Make replies feel natural and human - avoid obvious AI patterns
+4. Each reply should be notably different from the others
+5. Match the energy and context of the original ${contentType}
+6. Be engaging and encourage conversation when appropriate
+${isReddit ? `7. Reddit appreciates wit and clever responses - feel free to be creative
+8. Use appropriate formatting for Reddit if helpful (but keep it simple)` : `7. Avoid generic phrases like "Great point!" or "Couldn't agree more!"
+8. Don't use hashtags unless specifically relevant
+9. Don't use emojis unless the tone calls for it`}
+${hasImages ? `${isReddit ? '9' : '10'}. Reference or react to the visual content if relevant` : ''}
 
 OUTPUT FORMAT:
 Return ONLY the replies, one per line, numbered 1-${numCandidates}.
@@ -85,7 +92,7 @@ Example output format:
 }
 
 // Call Anthropic API
-async function callAnthropicAPI(apiKey, model, prompt, numCandidates, imageUrls = []) {
+async function callAnthropicAPI(apiKey, model, prompt, numCandidates, imageUrls = [], platform = 'twitter') {
   // Build content with optional vision support
   const content = [];
   
@@ -132,11 +139,11 @@ async function callAnthropicAPI(apiKey, model, prompt, numCandidates, imageUrls 
   const data = await response.json();
   const responseContent = data.content?.[0]?.text || '';
   
-  return parseReplies(responseContent, numCandidates);
+  return parseReplies(responseContent, numCandidates, platform);
 }
 
 // Call OpenAI API
-async function callOpenAIAPI(apiKey, model, prompt, numCandidates, imageUrls = []) {
+async function callOpenAIAPI(apiKey, model, prompt, numCandidates, imageUrls = [], platform = 'twitter') {
   // Build messages with optional vision support
   const userContent = [];
   
@@ -192,42 +199,56 @@ async function callOpenAIAPI(apiKey, model, prompt, numCandidates, imageUrls = [
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content || '';
   
-  return parseReplies(content, numCandidates);
+  return parseReplies(content, numCandidates, platform);
 }
 
 // Parse the LLM response into individual replies
-function parseReplies(content, numCandidates) {
+function parseReplies(content, numCandidates, platform = 'twitter') {
+  const maxLength = platform === 'reddit' ? 10000 : 280; // Reddit has no real limit, Twitter is 280
   const lines = content.trim().split('\n');
   const replies = [];
+  let currentReply = '';
+  let currentNumber = 0;
 
   for (const line of lines) {
     // Match lines that start with a number followed by period/parenthesis
-    const match = line.match(/^\d+[\.\)]\s*(.+)$/);
-    if (match && match[1]) {
-      let reply = match[1].trim();
-      // Remove surrounding quotes if present
-      reply = reply.replace(/^["']|["']$/g, '');
-      if (reply && reply.length <= 280) {
-        replies.push(reply);
+    const match = line.match(/^(\d+)[\.\)]\s*(.*)$/);
+    if (match) {
+      // Save previous reply if exists
+      if (currentReply && currentReply.length <= maxLength) {
+        replies.push(currentReply.trim());
       }
+      currentNumber = parseInt(match[1]);
+      currentReply = match[2] || '';
+    } else if (currentNumber > 0 && line.trim()) {
+      // Continue multi-line reply (common for Reddit)
+      currentReply += '\n' + line;
     }
   }
+  
+  // Don't forget the last reply
+  if (currentReply && currentReply.length <= maxLength) {
+    replies.push(currentReply.trim());
+  }
+
+  // Clean up replies - remove surrounding quotes
+  const cleanedReplies = replies.map(r => r.replace(/^["']|["']$/g, '').trim()).filter(r => r);
 
   // If parsing failed, try to split by double newlines or just return as-is
-  if (replies.length === 0) {
+  if (cleanedReplies.length === 0) {
     const fallbackReplies = content
       .split(/\n\n+/)
       .map(r => r.replace(/^\d+[\.\)]\s*/, '').trim())
-      .filter(r => r && r.length <= 280);
+      .filter(r => r && r.length <= maxLength);
     
     return fallbackReplies.slice(0, numCandidates);
   }
 
-  return replies.slice(0, numCandidates);
+  return cleanedReplies.slice(0, numCandidates);
 }
 
 // Keep service worker alive
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('TweetCraft AI installed');
+  console.log('ReplyForge AI installed');
 });
 

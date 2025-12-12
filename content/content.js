@@ -1,4 +1,4 @@
-// TweetCraft AI - Content Script
+// ReplyForge AI - Content Script for Twitter/X
 // Integrates with Twitter/X UI to provide AI-powered reply assistance
 
 (function() {
@@ -90,13 +90,13 @@
       await chrome.storage.local.set(data);
     } catch (e) {
       // Silently fail for storage set
-      console.log('TweetCraft: Could not save to storage', e.message);
+      console.log('ReplyForge: Could not save to storage', e.message);
     }
   }
 
   // Initialize
   function init() {
-    console.log('TweetCraft: Initializing...');
+    console.log('ReplyForge: Initializing...');
     
     // Remove any stale buttons from previous extension loads
     document.querySelectorAll('.tweetcraft-btn-wrapper').forEach(el => el.remove());
@@ -121,7 +121,7 @@
       e.stopPropagation();
       e.stopImmediatePropagation();
       
-      console.log('TweetCraft: Button clicked via delegation!', e.type);
+      console.log('ReplyForge: Button clicked via delegation!', e.type);
       
       // Debounce to prevent multiple fires
       if (window._tweetcraftClickDebounce) return;
@@ -165,7 +165,7 @@
                 document.querySelector('[role="dialog"] [role="textbox"]');
     }
     
-    console.log('TweetCraft: Context found', { toolbar: !!toolbar, container: !!container, textarea: !!textarea });
+    console.log('ReplyForge: Context found', { toolbar: !!toolbar, container: !!container, textarea: !!textarea });
     toggleInlinePanel(textarea, container, btn);
   }
 
@@ -178,9 +178,9 @@
       if (saved.panelTone) state.tone = saved.panelTone;
       if (saved.panelFeedback) state.feedback = saved.panelFeedback;
       if (saved.panelCandidates) state.lastCandidates = saved.panelCandidates;
-      console.log('TweetCraft: Loaded panel state', { tone: state.tone, feedback: state.feedback?.substring(0, 20) });
+      console.log('ReplyForge: Loaded panel state', { tone: state.tone, feedback: state.feedback?.substring(0, 20) });
     } catch (error) {
-      console.log('TweetCraft: Could not load panel state', error.message);
+      console.log('ReplyForge: Could not load panel state', error.message);
     }
   }
 
@@ -310,7 +310,7 @@
     
     // Append to body to avoid Twitter's DOM manipulation
     document.body.appendChild(panel);
-    console.log('TweetCraft: Panel added to body as fixed overlay');
+    console.log('ReplyForge: Panel added to body as fixed overlay');
 
     // Animate in
     requestAnimationFrame(() => panel.classList.add('visible'));
@@ -362,7 +362,7 @@
             <path d="M2 17L12 22L22 17"/>
             <path d="M2 12L12 17L22 12"/>
           </svg>
-          <span>TweetCraft AI</span>
+          <span>ReplyForge AI</span>
           ${imageUrls.length > 0 ? `<span class="tweetcraft-vision-badge">📷 ${imageUrls.length} image${imageUrls.length > 1 ? 's' : ''}</span>` : ''}
         </div>
         <button class="tweetcraft-panel-close" title="Close">×</button>
@@ -585,7 +585,7 @@
       renderResults(resultsContainer);
 
     } catch (error) {
-      console.error('TweetCraft error:', error);
+      console.error('ReplyForge error:', error);
       
       // Check if it's a context invalidation error
       if (state.contextInvalidated || 
@@ -726,7 +726,7 @@
         historyTimestamp: Date.now()
       });
     } catch (error) {
-      console.log('TweetCraft: Could not load history', error.message);
+      console.log('ReplyForge: Could not load history', error.message);
     }
   }
 

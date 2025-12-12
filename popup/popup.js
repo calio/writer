@@ -174,7 +174,7 @@ function updateStatus(type, message) {
   // Auto-clear after 3 seconds for success/warning messages
   if (type === 'success' || type === 'warning') {
     setTimeout(() => {
-      statusText.textContent = 'Ready to craft tweets';
+      statusText.textContent = 'Ready to forge replies';
       statusBar.className = 'status-bar';
     }, 3000);
   }

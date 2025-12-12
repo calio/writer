@@ -167,6 +167,13 @@
     // Remove existing panel if any
     const existingPanel = document.querySelector('.tweetcraft-inline-panel');
     if (existingPanel) {
+      // Save state before closing
+      const feedbackInput = existingPanel.querySelector('.tweetcraft-feedback-input');
+      if (feedbackInput) {
+        state.feedback = feedbackInput.value;
+      }
+      savePanelState();
+      
       existingPanel.remove();
       state.currentPanel = null;
       document.querySelectorAll('.tweetcraft-btn.active, .tweetcraft-btn-wrapper .tweetcraft-btn.active').forEach(b => b.classList.remove('active'));
@@ -209,6 +216,12 @@
 
     // Animate in
     requestAnimationFrame(() => panel.classList.add('visible'));
+    
+    // Auto-generate if no cached candidates
+    if (!state.lastCandidates || state.lastCandidates.length === 0) {
+      // Small delay to let the panel render first
+      setTimeout(() => generateReplies(panel), 300);
+    }
     
     // Close when clicking outside
     const closeOnClickOutside = (e) => {

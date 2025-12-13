@@ -14,6 +14,8 @@
   --tc-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
   --tc-success: #00ba7c;
   --tc-error: #f4212e;
+  --tc-user-bg: rgba(99, 102, 241, 0.1);
+  --tc-assistant-bg: rgba(139, 92, 246, 0.05);
 }
 
 /* Main Button - using actual button element */
@@ -440,4 +442,472 @@ html[style*="color-scheme: light"] .tweetcraft-inline-panel {
   --tc-border: #cfd9de;
   --tc-text: #0f1419;
   --tc-text-secondary: #536471;
+}
+
+/* ============================================
+   CONVERSATIONAL INTERFACE STYLES
+   ============================================ */
+
+/* Conversational panel modifications */
+.tweetcraft-conversational {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header actions */
+.tweetcraft-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tweetcraft-new-chat-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--tc-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.tweetcraft-new-chat-btn:hover {
+  background: var(--tc-bg-hover);
+  color: var(--tc-accent);
+}
+
+.tweetcraft-new-chat-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Context preview */
+.tweetcraft-context-preview {
+  padding: 8px 12px;
+  background: var(--tc-bg-secondary);
+  border-bottom: 1px solid var(--tc-border);
+}
+
+.tweetcraft-context-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--tc-text-secondary);
+  margin-bottom: 4px;
+  letter-spacing: 0.5px;
+}
+
+.tweetcraft-context-text {
+  font-size: 12px;
+  color: var(--tc-text);
+  opacity: 0.8;
+  line-height: 1.4;
+}
+
+/* Conversation container */
+.tweetcraft-conversation {
+  flex: 1;
+  min-height: 200px;
+  max-height: 350px;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Empty conversation state */
+.tweetcraft-empty-conversation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 150px;
+  text-align: center;
+  padding: 20px;
+}
+
+.tweetcraft-empty-icon {
+  font-size: 32px;
+  margin-bottom: 12px;
+  opacity: 0.6;
+}
+
+.tweetcraft-empty-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--tc-text);
+  margin-bottom: 4px;
+}
+
+.tweetcraft-empty-hint {
+  font-size: 12px;
+  color: var(--tc-text-secondary);
+}
+
+/* Message styles */
+.tweetcraft-message {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.tweetcraft-user-message {
+  background: var(--tc-user-bg);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.tweetcraft-assistant-message {
+  background: var(--tc-assistant-bg);
+  border: 1px solid var(--tc-border);
+}
+
+.tweetcraft-message-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tweetcraft-message-role {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--tc-text-secondary);
+}
+
+.tweetcraft-user-message .tweetcraft-message-role {
+  color: var(--tc-accent);
+}
+
+.tweetcraft-message-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.tweetcraft-edit-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tc-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  opacity: 0.6;
+}
+
+.tweetcraft-edit-btn:hover {
+  background: var(--tc-bg-hover);
+  color: var(--tc-accent);
+  opacity: 1;
+}
+
+.tweetcraft-edit-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tweetcraft-message-content {
+  padding: 10px 12px;
+}
+
+.tweetcraft-message-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--tc-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tweetcraft-message-images {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.tweetcraft-message-images img {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--tc-border);
+}
+
+/* Edit mode */
+.tweetcraft-edit-textarea {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--tc-bg);
+  border: 1px solid var(--tc-accent);
+  border-radius: 8px;
+  color: var(--tc-text);
+  resize: vertical;
+  outline: none;
+}
+
+.tweetcraft-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.tweetcraft-cancel-edit-btn,
+.tweetcraft-save-edit-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tweetcraft-cancel-edit-btn {
+  background: transparent;
+  border: 1px solid var(--tc-border);
+  color: var(--tc-text-secondary);
+}
+
+.tweetcraft-cancel-edit-btn:hover {
+  background: var(--tc-bg-hover);
+  color: var(--tc-text);
+}
+
+.tweetcraft-save-edit-btn {
+  background: var(--tc-gradient);
+  border: none;
+  color: white;
+}
+
+.tweetcraft-save-edit-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+/* Candidates in assistant message */
+.tweetcraft-candidates-count {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--tc-bg);
+  border-radius: 10px;
+  color: var(--tc-text-secondary);
+}
+
+.tweetcraft-candidates-list {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tweetcraft-candidate {
+  padding: 10px;
+  background: var(--tc-bg);
+  border: 1px solid var(--tc-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tweetcraft-candidate:hover {
+  border-color: var(--tc-accent);
+  background: var(--tc-bg-hover);
+}
+
+.tweetcraft-candidate.selected {
+  border-color: var(--tc-accent);
+  background: rgba(99, 102, 241, 0.1);
+  box-shadow: 0 0 0 1px var(--tc-accent);
+}
+
+.tweetcraft-candidate-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--tc-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tweetcraft-candidate-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--tc-border);
+}
+
+/* Input area */
+.tweetcraft-input-area {
+  padding: 12px;
+  background: var(--tc-bg-secondary);
+  border-top: 1px solid var(--tc-border);
+}
+
+.tweetcraft-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.tweetcraft-input-wrapper {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.tweetcraft-chat-input {
+  width: 100%;
+  padding: 10px 40px 10px 12px;
+  font-size: 13px;
+  border: 1px solid var(--tc-border);
+  border-radius: 20px;
+  background: var(--tc-bg);
+  color: var(--tc-text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.tweetcraft-chat-input::placeholder {
+  color: var(--tc-text-secondary);
+}
+
+.tweetcraft-chat-input:focus {
+  border-color: var(--tc-accent);
+}
+
+.tweetcraft-attach-btn {
+  position: absolute;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--tc-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.tweetcraft-attach-btn:hover {
+  color: var(--tc-accent);
+  background: var(--tc-bg-hover);
+}
+
+.tweetcraft-attach-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tweetcraft-send-btn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: var(--tc-gradient);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.tweetcraft-send-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+.tweetcraft-send-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Attached images preview */
+.tweetcraft-attached-images {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.tweetcraft-attached-image {
+  position: relative;
+  width: 50px;
+  height: 50px;
+}
+
+.tweetcraft-attached-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--tc-border);
+}
+
+.tweetcraft-remove-image {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: var(--tc-error);
+  color: white;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tweetcraft-remove-image:hover {
+  transform: scale(1.1);
+}
+
+/* Loading state in conversation */
+.tweetcraft-message.loading .tweetcraft-message-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+/* Conversation scrollbar */
+.tweetcraft-conversation::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tweetcraft-conversation::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tweetcraft-conversation::-webkit-scrollbar-thumb {
+  background: var(--tc-border);
+  border-radius: 3px;
+}
+
+.tweetcraft-conversation::-webkit-scrollbar-thumb:hover {
+  background: var(--tc-text-secondary);
 }

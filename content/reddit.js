@@ -1,31 +1,36 @@
 // Writer AI - Reddit Content Script
-// Provides AI-powered reply assistance for Reddit comments
+// Provides AI-powered reply assistance for Reddit comments with conversational refinement
 
 (function() {
   'use strict';
 
-  // State
-  let state = {
-    candidates: [],
-    selectedIndex: 0,
-    isLoading: false,
-    currentTextarea: null,
-    currentPanel: null,
-    tone: 'match',
-    feedback: '',
-    lastCandidates: [],
-    contextInvalidated: false,
-    // URL tracking for context clearing
-    lastUrl: window.location.href
-  };
-
   // Platform detection
   const PLATFORM = 'reddit';
-  
-  // Detect if old Reddit
   const isOldReddit = window.location.hostname === 'old.reddit.com' || 
                       document.querySelector('.reddit-old') !== null ||
                       document.querySelector('#header-img') !== null;
+
+  // State
+  let state = {
+    // Conversation state
+    conversation: [],
+    isLoading: false,
+    currentTextarea: null,
+    currentPanel: null,
+    // Persisted state
+    tone: 'match',
+    contextInvalidated: false,
+    // URL tracking for context clearing
+    lastUrl: window.location.href,
+    // Original context
+    originalPost: '',
+    originalImages: []
+  };
+
+  // Generate unique ID
+  function generateId() {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2);
+  }
 
   // Check if extension context is still valid
   function isExtensionContextValid() {
@@ -44,9 +49,9 @@
     state.contextInvalidated = true;
     if (container) {
       container.innerHTML = `
-        <div class="replyforge-error" style="text-align: center;">
+        <div class="tweetcraft-error" style="text-align: center;">
           <span>🔄 Extension was updated. Please refresh the page to continue.</span>
-          <button class="replyforge-retry-btn" onclick="location.reload()">Refresh Page</button>
+          <button class="tweetcraft-retry-btn" onclick="location.reload()">Refresh Page</button>
         </div>
       `;
     }
@@ -100,22 +105,18 @@
   function init() {
     console.log('Writer Reddit: Initializing...', { isOldReddit });
     
-    // Remove any stale buttons from previous loads
     document.querySelectorAll('.replyforge-btn-wrapper, .tweetcraft-btn-wrapper').forEach(el => el.remove());
     document.querySelectorAll('.replyforge-inline-panel, .tweetcraft-inline-panel').forEach(el => el.remove());
     
     loadPanelState();
     setupGlobalClickHandler();
-    setupUrlTracking(); // Track URL changes to clear context
+    setupUrlTracking();
     observeDOM();
   }
 
   // Setup URL tracking to clear context on navigation
   function setupUrlTracking() {
-    // Check for URL changes periodically (for SPA navigation)
     setInterval(checkUrlChange, 500);
-    
-    // Also listen for popstate events
     window.addEventListener('popstate', checkUrlChange);
   }
 
@@ -131,22 +132,19 @@
 
   // Clear context when URL changes
   async function clearContextOnUrlChange() {
-    // Clear candidates
-    state.candidates = [];
-    state.lastCandidates = [];
-    state.feedback = '';
+    state.conversation = [];
+    state.originalPost = '';
+    state.originalImages = [];
     
-    // Close any open panel
     if (state.currentPanel) {
       state.currentPanel.remove();
       state.currentPanel = null;
       document.querySelectorAll('.replyforge-btn.active, .tweetcraft-btn.active').forEach(b => b.classList.remove('active'));
     }
     
-    // Persist the cleared state
     await safeChromeStorageSet({
-      panelCandidates: [],
-      panelFeedback: ''
+      redditConversation: [],
+      redditOriginalPost: ''
     });
     
     console.log('Writer Reddit: Context cleared for new URL');
@@ -156,11 +154,11 @@
   async function loadPanelState() {
     if (state.contextInvalidated) return;
     try {
-      const saved = await safeChromeStorageGet(['panelTone', 'panelFeedback', 'panelCandidates']);
+      const saved = await safeChromeStorageGet(['panelTone', 'redditConversation', 'redditOriginalPost']);
       if (saved.panelTone) state.tone = saved.panelTone;
-      if (saved.panelFeedback) state.feedback = saved.panelFeedback;
-      if (saved.panelCandidates) state.lastCandidates = saved.panelCandidates;
-      console.log('Writer Reddit: Loaded panel state', { tone: state.tone });
+      if (saved.redditConversation) state.conversation = saved.redditConversation;
+      if (saved.redditOriginalPost) state.originalPost = saved.redditOriginalPost;
+      console.log('Writer Reddit: Loaded panel state', { tone: state.tone, conversationLength: state.conversation.length });
     } catch (error) {
       console.log('Writer Reddit: Could not load panel state', error.message);
     }
@@ -171,8 +169,8 @@
     if (state.contextInvalidated) return;
     await safeChromeStorageSet({
       panelTone: state.tone,
-      panelFeedback: state.feedback,
-      panelCandidates: state.lastCandidates
+      redditConversation: state.conversation,
+      redditOriginalPost: state.originalPost
     });
   }
 
@@ -190,7 +188,6 @@
       
       console.log('Writer Reddit: Button clicked!', e.type);
       
-      // Debounce
       if (window._replyforgeClickDebounce) return;
       window._replyforgeClickDebounce = true;
       setTimeout(() => { window._replyforgeClickDebounce = false; }, 300);
@@ -206,8 +203,6 @@
   // Handle button click
   function handleButtonClick(btn) {
     const wrapper = btn.closest('.replyforge-btn-wrapper, .tweetcraft-btn-wrapper') || btn.parentElement;
-    
-    // Find the comment form/textarea container
     const container = wrapper.closest('.md-container') ||
                      wrapper.closest('[slot="comment-composer-container"]') ||
                      wrapper.closest('shreddit-composer') ||
@@ -217,7 +212,6 @@
                      wrapper.closest('form') ||
                      wrapper.parentElement?.parentElement;
     
-    // Find textarea - try multiple selectors
     let textarea = findTextarea(container);
     
     console.log('Writer Reddit: Context found', { container: !!container, textarea: !!textarea });
@@ -226,23 +220,19 @@
 
   // Find textarea in various Reddit UIs
   function findTextarea(container) {
-    // Modern Reddit
     let textarea = container?.querySelector('textarea, [contenteditable="true"], div[role="textbox"]');
     
     if (!textarea) {
-      // Try shreddit components
       textarea = document.querySelector('shreddit-composer textarea') ||
                 document.querySelector('shreddit-composer [contenteditable="true"]');
     }
     
     if (!textarea) {
-      // Try faceplate forms
       textarea = document.querySelector('faceplate-form textarea') ||
                 document.querySelector('[slot="comment-composer-container"] textarea');
     }
     
     if (!textarea) {
-      // Old Reddit
       textarea = container?.querySelector('.md textarea') ||
                 document.querySelector('.usertext-edit textarea') ||
                 document.querySelector('.commentarea textarea');
@@ -263,7 +253,6 @@
       subtree: true
     });
 
-    // Initial injection with delays for dynamic content
     setTimeout(injectButtons, 500);
     setTimeout(injectButtons, 1500);
     setTimeout(injectButtons, 3000);
@@ -279,13 +268,11 @@
     }
   }
 
-  // New Reddit (shreddit/modern UI) button injection
+  // New Reddit button injection
   function injectIntoNewReddit() {
-    // Strategy 1: shreddit-composer elements
     document.querySelectorAll('shreddit-composer').forEach(composer => {
       if (composer.querySelector('.replyforge-btn-wrapper, .tweetcraft-btn-wrapper')) return;
       
-      // Look for toolbar slots
       const toolbar = composer.querySelector('[slot="composer-toolbar"]') ||
                      composer.querySelector('.flex.items-center') ||
                      composer.querySelector('footer') ||
@@ -298,14 +285,12 @@
       }
     });
 
-    // Strategy 2: faceplate-form elements
     document.querySelectorAll('faceplate-form').forEach(form => {
       if (form.querySelector('.replyforge-btn-wrapper, .tweetcraft-btn-wrapper')) return;
       
       const textarea = form.querySelector('textarea');
       if (!textarea) return;
       
-      // Find action area - look for button containers
       const actionArea = form.querySelector('[class*="flex"][class*="gap"]') ||
                         form.querySelector('[class*="actions"]') ||
                         form.querySelector('footer') ||
@@ -314,7 +299,6 @@
       
       if (actionArea && !actionArea.querySelector('.replyforge-btn-wrapper')) {
         const btn = createWriterButton();
-        // Try to insert near the beginning
         if (actionArea.firstChild) {
           actionArea.insertBefore(btn, actionArea.firstChild);
         } else {
@@ -324,14 +308,12 @@
       }
     });
 
-    // Strategy 3: Comment composer containers
     document.querySelectorAll('[slot="comment-composer-container"], [data-testid="comment-composer"]').forEach(container => {
       if (container.querySelector('.replyforge-btn-wrapper, .tweetcraft-btn-wrapper')) return;
       
       const textarea = container.querySelector('textarea, [contenteditable="true"]');
       if (!textarea) return;
       
-      // Find a toolbar or actions area
       const toolbar = container.querySelector('[class*="toolbar"]') ||
                      container.querySelector('[class*="actions"]') ||
                      container.querySelector('footer');
@@ -343,15 +325,12 @@
       }
     });
 
-    // Strategy 4: Generic forms with textareas (fallback)
     document.querySelectorAll('form').forEach(form => {
-      // Skip if already has button or no textarea
       if (form.querySelector('.replyforge-btn-wrapper, .tweetcraft-btn-wrapper')) return;
       
       const textarea = form.querySelector('textarea[name*="comment"], textarea[name*="body"]');
       if (!textarea) return;
       
-      // Find button area
       const buttonArea = form.querySelector('button[type="submit"]')?.parentElement ||
                         form.querySelector('[class*="actions"]');
       
@@ -362,7 +341,6 @@
       }
     });
 
-    // Strategy 5: Post submit pages
     document.querySelectorAll('[data-testid="post-composer"], .submit-page').forEach(composer => {
       if (composer.querySelector('.replyforge-btn-wrapper, .tweetcraft-btn-wrapper')) return;
       
@@ -383,7 +361,6 @@
 
   // Old Reddit button injection
   function injectIntoOldReddit() {
-    // Comment reply forms
     document.querySelectorAll('.usertext-edit').forEach(editor => {
       if (editor.querySelector('.replyforge-btn-wrapper, .tweetcraft-btn-wrapper')) return;
       
@@ -400,7 +377,6 @@
       }
     });
 
-    // New comment form on old reddit
     document.querySelectorAll('.commentarea .usertext, .comment .usertext').forEach(usertext => {
       if (usertext.querySelector('.replyforge-btn-wrapper, .tweetcraft-btn-wrapper')) return;
       
@@ -418,7 +394,6 @@
       }
     });
 
-    // Submit page
     document.querySelectorAll('#submit-form, .submit-page form').forEach(form => {
       if (form.querySelector('.replyforge-btn-wrapper, .tweetcraft-btn-wrapper')) return;
       
@@ -439,7 +414,6 @@
   // Create Writer AI button
   function createWriterButton() {
     const wrapper = document.createElement('div');
-    // Use both class names for compatibility
     wrapper.className = 'replyforge-btn-wrapper tweetcraft-btn-wrapper';
     wrapper.style.cssText = 'display: inline-flex; align-items: center; justify-content: center; margin-right: 8px;';
     
@@ -464,10 +438,6 @@
   function toggleInlinePanel(textarea, container, btn) {
     const existingPanel = document.querySelector('.replyforge-inline-panel, .tweetcraft-inline-panel');
     if (existingPanel) {
-      const feedbackInput = existingPanel.querySelector('.replyforge-feedback-input, .tweetcraft-feedback-input');
-      if (feedbackInput) {
-        state.feedback = feedbackInput.value;
-      }
       savePanelState();
       existingPanel.remove();
       state.currentPanel = null;
@@ -478,24 +448,27 @@
     state.currentTextarea = textarea;
     btn.classList.add('active');
     
-    const panel = createInlinePanel(container);
+    // Extract context if this is a fresh conversation
+    if (state.conversation.length === 0) {
+      state.originalPost = extractOriginalPost(container);
+    }
+    
+    const panel = createConversationalPanel();
     state.currentPanel = panel;
 
-    // Position panel
     const wrapper = btn.closest('.replyforge-btn-wrapper, .tweetcraft-btn-wrapper') || btn;
     const rect = wrapper.getBoundingClientRect();
-    const panelWidth = 450;
+    const panelWidth = 480;
     const viewportWidth = window.innerWidth;
     let leftPos = rect.left + (rect.width / 2) - (panelWidth / 2);
     leftPos = Math.max(10, Math.min(leftPos, viewportWidth - panelWidth - 10));
     
     panel.style.position = 'fixed';
     panel.style.left = `${leftPos}px`;
-    panel.style.top = `${Math.min(rect.bottom + 10, window.innerHeight - 400)}px`;
+    panel.style.top = `${Math.min(rect.bottom + 10, window.innerHeight - 500)}px`;
     panel.style.width = `${panelWidth}px`;
     panel.style.maxWidth = 'calc(100vw - 20px)';
     panel.style.maxHeight = 'calc(100vh - 100px)';
-    panel.style.overflowY = 'auto';
     panel.style.zIndex = '10000';
     panel.style.boxShadow = '0 8px 32px rgba(0,0,0,0.3)';
     
@@ -504,18 +477,15 @@
 
     requestAnimationFrame(() => panel.classList.add('visible'));
     
-    if (!state.lastCandidates || state.lastCandidates.length === 0) {
-      setTimeout(() => generateReplies(panel), 300);
+    // Auto-generate if fresh conversation
+    if (state.conversation.length === 0) {
+      setTimeout(() => sendMessage(panel, 'Generate reply options'), 300);
     }
     
     // Close on click outside
     const closeOnClickOutside = (e) => {
       if (!panel.contains(e.target) && !btn.contains(e.target) && !wrapper.contains(e.target)) {
-        const feedbackInput = panel.querySelector('.replyforge-feedback-input, .tweetcraft-feedback-input');
-        if (feedbackInput) {
-          state.feedback = feedbackInput.value;
-          savePanelState();
-        }
+        savePanelState();
         panel.classList.remove('visible');
         setTimeout(() => {
           panel.remove();
@@ -528,15 +498,12 @@
     setTimeout(() => document.addEventListener('click', closeOnClickOutside), 100);
   }
 
-  // Create inline panel
-  function createInlinePanel(container) {
-    const originalPost = extractOriginalPost(container);
+  // Create conversational panel
+  function createConversationalPanel() {
     const savedTone = state.tone || 'match';
-    const savedFeedback = state.feedback || '';
 
     const panel = document.createElement('div');
-    // Use both class names for CSS compatibility
-    panel.className = 'replyforge-inline-panel tweetcraft-inline-panel';
+    panel.className = 'replyforge-inline-panel tweetcraft-inline-panel tweetcraft-conversational';
     panel.innerHTML = `
       <div class="tweetcraft-panel-header">
         <div class="tweetcraft-panel-title">
@@ -548,7 +515,14 @@
           <span>Writer AI</span>
           <span class="tweetcraft-platform-badge">Reddit</span>
         </div>
-        <button class="tweetcraft-panel-close" title="Close">×</button>
+        <div class="tweetcraft-header-actions">
+          <button class="tweetcraft-new-chat-btn" title="Start new conversation">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+          </button>
+          <button class="tweetcraft-panel-close" title="Close">×</button>
+        </div>
       </div>
       
       <div class="tweetcraft-tone-row">
@@ -559,47 +533,55 @@
         <button class="tweetcraft-tone-chip ${savedTone === 'thoughtful' ? 'active' : ''}" data-tone="thoughtful">Deep</button>
       </div>
 
-      <div class="tweetcraft-feedback-row">
-        <input type="text" class="tweetcraft-feedback-input replyforge-feedback-input" placeholder="Instructions: e.g., make it shorter, add a question..." value="${escapeHtml(savedFeedback)}" />
-        <button class="tweetcraft-generate-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-          </svg>
-          Generate
-        </button>
+      ${state.originalPost ? `
+        <div class="tweetcraft-context-preview">
+          <div class="tweetcraft-context-label">Replying to:</div>
+          <div class="tweetcraft-context-text">${escapeHtml(state.originalPost.substring(0, 150))}${state.originalPost.length > 150 ? '...' : ''}</div>
+        </div>
+      ` : ''}
+
+      <div class="tweetcraft-conversation" id="tweetcraft-conversation">
+        <!-- Conversation messages will be rendered here -->
       </div>
 
-      <div class="tweetcraft-results" id="replyforge-results">
-        <div class="tweetcraft-empty">Click "Generate" to create AI-powered replies</div>
+      <div class="tweetcraft-input-area">
+        <div class="tweetcraft-input-row">
+          <div class="tweetcraft-input-wrapper">
+            <input type="text" class="tweetcraft-chat-input" placeholder="Refine: e.g., make it shorter, add humor, be more direct..." />
+            <input type="file" class="tweetcraft-image-input" accept="image/*" multiple hidden />
+            <button class="tweetcraft-attach-btn" title="Attach images">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21,15 16,10 5,21"/>
+              </svg>
+            </button>
+          </div>
+          <button class="tweetcraft-send-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"/>
+              <polygon points="22,2 15,22 11,13 2,9 22,2"/>
+            </svg>
+          </button>
+        </div>
+        <div class="tweetcraft-attached-images" id="tweetcraft-attached-images"></div>
       </div>
     `;
 
-    panel.dataset.originalPost = originalPost;
     panel.dataset.tone = savedTone;
-    panel.dataset.platform = PLATFORM;
-
-    setupPanelListeners(panel);
-
-    if (state.lastCandidates && state.lastCandidates.length > 0) {
-      state.candidates = state.lastCandidates;
-      state.selectedIndex = 0;
-      setTimeout(() => {
-        const resultsContainer = panel.querySelector('#replyforge-results');
-        if (resultsContainer) renderResults(resultsContainer);
-      }, 50);
-    }
+    panel._attachedImages = [];
+    
+    setupConversationalPanelListeners(panel);
+    renderConversation(panel);
 
     return panel;
   }
 
-  // Setup panel event listeners
-  function setupPanelListeners(panel) {
+  // Setup conversational panel event listeners
+  function setupConversationalPanelListeners(panel) {
+    // Close button
     panel.querySelector('.tweetcraft-panel-close').addEventListener('click', () => {
-      const feedbackInput = panel.querySelector('.tweetcraft-feedback-input');
-      if (feedbackInput) {
-        state.feedback = feedbackInput.value;
-        savePanelState();
-      }
+      savePanelState();
       panel.classList.remove('visible');
       setTimeout(() => {
         panel.remove();
@@ -608,6 +590,16 @@
       }, 200);
     });
 
+    // New chat button
+    panel.querySelector('.tweetcraft-new-chat-btn').addEventListener('click', () => {
+      state.conversation = [];
+      panel._attachedImages = [];
+      renderConversation(panel);
+      renderAttachedImages(panel);
+      savePanelState();
+    });
+
+    // Tone chips
     panel.querySelectorAll('.tweetcraft-tone-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         panel.querySelectorAll('.tweetcraft-tone-chip').forEach(c => c.classList.remove('active'));
@@ -618,30 +610,367 @@
       });
     });
 
-    panel.querySelector('.tweetcraft-generate-btn').addEventListener('click', () => {
-      generateReplies(panel);
-    });
-
-    const feedbackInput = panel.querySelector('.tweetcraft-feedback-input');
-    feedbackInput.addEventListener('input', () => {
-      state.feedback = feedbackInput.value;
-      clearTimeout(window.replyforgeFeedbackSaveTimeout);
-      window.replyforgeFeedbackSaveTimeout = setTimeout(savePanelState, 500);
-    });
-
-    feedbackInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+    // Chat input
+    const chatInput = panel.querySelector('.tweetcraft-chat-input');
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        generateReplies(panel);
+        const message = chatInput.value.trim();
+        if (message || panel._attachedImages.length > 0) {
+          sendMessage(panel, message);
+          chatInput.value = '';
+        }
       }
     });
+
+    // Send button
+    panel.querySelector('.tweetcraft-send-btn').addEventListener('click', () => {
+      const message = chatInput.value.trim();
+      if (message || panel._attachedImages.length > 0) {
+        sendMessage(panel, message);
+        chatInput.value = '';
+      }
+    });
+
+    // Image attachment
+    const imageInput = panel.querySelector('.tweetcraft-image-input');
+    const attachBtn = panel.querySelector('.tweetcraft-attach-btn');
+    
+    attachBtn.addEventListener('click', () => {
+      imageInput.click();
+    });
+
+    imageInput.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files);
+      for (const file of files) {
+        if (file.type.startsWith('image/')) {
+          const dataUrl = await fileToDataUrl(file);
+          panel._attachedImages.push(dataUrl);
+        }
+      }
+      renderAttachedImages(panel);
+      imageInput.value = '';
+    });
+  }
+
+  // Convert file to data URL
+  function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Render attached images preview
+  function renderAttachedImages(panel) {
+    const container = panel.querySelector('#tweetcraft-attached-images');
+    if (panel._attachedImages.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+
+    container.innerHTML = panel._attachedImages.map((url, i) => `
+      <div class="tweetcraft-attached-image" data-index="${i}">
+        <img src="${url}" alt="Attached image" />
+        <button class="tweetcraft-remove-image" data-index="${i}">×</button>
+      </div>
+    `).join('');
+
+    container.querySelectorAll('.tweetcraft-remove-image').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const index = parseInt(btn.dataset.index);
+        panel._attachedImages.splice(index, 1);
+        renderAttachedImages(panel);
+      });
+    });
+  }
+
+  // Render conversation
+  function renderConversation(panel) {
+    const container = panel.querySelector('#tweetcraft-conversation');
+    
+    if (state.conversation.length === 0) {
+      container.innerHTML = `
+        <div class="tweetcraft-empty-conversation">
+          <div class="tweetcraft-empty-icon">💬</div>
+          <div class="tweetcraft-empty-text">Start a conversation to craft your perfect reply</div>
+          <div class="tweetcraft-empty-hint">The AI will generate multiple options you can refine</div>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = state.conversation.map((msg, index) => {
+      if (msg.role === 'user') {
+        return renderUserMessage(msg, index);
+      } else {
+        return renderAssistantMessage(msg, index);
+      }
+    }).join('');
+
+    setupMessageListeners(panel, container);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  // Render user message
+  function renderUserMessage(msg, index) {
+    const hasImages = msg.images && msg.images.length > 0;
+    return `
+      <div class="tweetcraft-message tweetcraft-user-message" data-index="${index}" data-id="${msg.id}">
+        <div class="tweetcraft-message-header">
+          <span class="tweetcraft-message-role">You</span>
+          <div class="tweetcraft-message-actions">
+            <button class="tweetcraft-edit-btn" data-index="${index}" title="Edit & regenerate from here">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="tweetcraft-message-content ${msg.isEditing ? 'editing' : ''}">
+          ${msg.isEditing ? `
+            <textarea class="tweetcraft-edit-textarea" data-index="${index}">${escapeHtml(msg.content)}</textarea>
+            <div class="tweetcraft-edit-actions">
+              <button class="tweetcraft-cancel-edit-btn" data-index="${index}">Cancel</button>
+              <button class="tweetcraft-save-edit-btn" data-index="${index}">Regenerate</button>
+            </div>
+          ` : `
+            <div class="tweetcraft-message-text">${escapeHtml(msg.content)}</div>
+          `}
+          ${hasImages ? `
+            <div class="tweetcraft-message-images">
+              ${msg.images.map(url => `<img src="${url}" alt="Attached" />`).join('')}
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  // Render assistant message
+  function renderAssistantMessage(msg, index) {
+    const candidates = msg.candidates || [];
+    const selectedIndex = msg.selectedIndex || 0;
+
+    if (candidates.length === 0) {
+      return `
+        <div class="tweetcraft-message tweetcraft-assistant-message" data-index="${index}" data-id="${msg.id}">
+          <div class="tweetcraft-message-header">
+            <span class="tweetcraft-message-role">Writer AI</span>
+          </div>
+          <div class="tweetcraft-message-content">
+            <div class="tweetcraft-message-text">${escapeHtml(msg.content || 'No response')}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="tweetcraft-message tweetcraft-assistant-message" data-index="${index}" data-id="${msg.id}">
+        <div class="tweetcraft-message-header">
+          <span class="tweetcraft-message-role">Writer AI</span>
+          <span class="tweetcraft-candidates-count">${candidates.length} options</span>
+        </div>
+        <div class="tweetcraft-candidates-list">
+          ${candidates.map((text, i) => `
+            <div class="tweetcraft-candidate ${i === selectedIndex ? 'selected' : ''}" data-msg-index="${index}" data-candidate-index="${i}">
+              <div class="tweetcraft-candidate-text">${escapeHtml(text)}</div>
+              <div class="tweetcraft-candidate-footer">
+                <span class="tweetcraft-char-count">${text.length} chars</span>
+                <button class="tweetcraft-use-btn" data-msg-index="${index}" data-candidate-index="${i}">Use this</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  // Setup message event listeners
+  function setupMessageListeners(panel, container) {
+    // Edit buttons
+    container.querySelectorAll('.tweetcraft-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const index = parseInt(btn.dataset.index);
+        state.conversation[index].isEditing = true;
+        renderConversation(panel);
+      });
+    });
+
+    // Cancel edit buttons
+    container.querySelectorAll('.tweetcraft-cancel-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const index = parseInt(btn.dataset.index);
+        state.conversation[index].isEditing = false;
+        renderConversation(panel);
+      });
+    });
+
+    // Save edit buttons (fork conversation)
+    container.querySelectorAll('.tweetcraft-save-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const index = parseInt(btn.dataset.index);
+        const textarea = container.querySelector(`.tweetcraft-edit-textarea[data-index="${index}"]`);
+        const newContent = textarea.value.trim();
+        
+        if (newContent) {
+          state.conversation = state.conversation.slice(0, index);
+          state.conversation[index] = {
+            ...state.conversation[index],
+            content: newContent,
+            isEditing: false
+          };
+          sendMessage(panel, newContent, [], true);
+        }
+      });
+    });
+
+    // Candidate selection
+    container.querySelectorAll('.tweetcraft-candidate').forEach(candidate => {
+      candidate.addEventListener('click', (e) => {
+        if (e.target.closest('.tweetcraft-use-btn')) return;
+        
+        const msgIndex = parseInt(candidate.dataset.msgIndex);
+        const candIndex = parseInt(candidate.dataset.candidateIndex);
+        
+        state.conversation[msgIndex].selectedIndex = candIndex;
+        savePanelState();
+        renderConversation(panel);
+      });
+    });
+
+    // Use buttons
+    container.querySelectorAll('.tweetcraft-use-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const msgIndex = parseInt(btn.dataset.msgIndex);
+        const candIndex = parseInt(btn.dataset.candidateIndex);
+        const text = state.conversation[msgIndex].candidates[candIndex];
+        useReply(text);
+      });
+    });
+  }
+
+  // Send message
+  async function sendMessage(panel, userMessage, images = [], isEdit = false) {
+    const conversationContainer = panel.querySelector('#tweetcraft-conversation');
+    
+    if (state.contextInvalidated) {
+      showContextInvalidatedError(conversationContainer);
+      return;
+    }
+
+    const attachedImages = isEdit ? images : [...(panel._attachedImages || [])];
+    
+    if (!isEdit || state.conversation.length === 0) {
+      state.conversation.push({
+        id: generateId(),
+        role: 'user',
+        content: userMessage,
+        images: attachedImages
+      });
+    }
+
+    panel._attachedImages = [];
+    renderAttachedImages(panel);
+
+    const loadingId = generateId();
+    state.conversation.push({
+      id: loadingId,
+      role: 'assistant',
+      content: '',
+      candidates: [],
+      isLoading: true
+    });
+    
+    renderConversation(panel);
+    state.isLoading = true;
+
+    try {
+      const settings = await safeChromeStorageGet(['candidates']);
+      
+      let conversationContext = buildConversationContext();
+
+      const allImages = [];
+      state.conversation.forEach(msg => {
+        if (msg.images) allImages.push(...msg.images);
+      });
+
+      const response = await safeChromeSend({
+        type: 'GENERATE_REPLIES',
+        payload: {
+          originalTweet: state.originalPost,
+          tone: panel.dataset.tone,
+          context: '',
+          feedback: userMessage,
+          conversationContext: conversationContext,
+          numCandidates: settings.candidates || 3,
+          imageUrls: allImages.slice(0, 4),
+          platform: PLATFORM
+        }
+      });
+
+      if (response?.error) {
+        throw new Error(response.error);
+      }
+
+      const loadingIndex = state.conversation.findIndex(m => m.id === loadingId);
+      if (loadingIndex !== -1) {
+        state.conversation[loadingIndex] = {
+          id: loadingId,
+          role: 'assistant',
+          content: '',
+          candidates: response?.candidates || [],
+          selectedIndex: 0,
+          isLoading: false
+        };
+      }
+
+      savePanelState();
+      renderConversation(panel);
+
+    } catch (error) {
+      console.error('Writer Reddit error:', error);
+      
+      const loadingIndex = state.conversation.findIndex(m => m.id === loadingId);
+      if (loadingIndex !== -1) {
+        state.conversation[loadingIndex] = {
+          id: loadingId,
+          role: 'assistant',
+          content: `Error: ${error.message}`,
+          candidates: [],
+          isLoading: false,
+          isError: true
+        };
+      }
+      
+      renderConversation(panel);
+    } finally {
+      state.isLoading = false;
+    }
+  }
+
+  // Build conversation context for AI
+  function buildConversationContext() {
+    if (state.conversation.length <= 1) return '';
+    
+    let context = '\n\nPREVIOUS CONVERSATION:\n';
+    state.conversation.slice(0, -1).forEach((msg, i) => {
+      if (msg.role === 'user') {
+        context += `User instruction ${i + 1}: "${msg.content}"\n`;
+      } else if (msg.candidates && msg.candidates.length > 0) {
+        const selected = msg.candidates[msg.selectedIndex || 0];
+        context += `AI generated (selected): "${selected}"\n`;
+      }
+    });
+    context += '\nNow refine based on the latest instruction above.\n';
+    return context;
   }
 
   // Extract original post/comment text
   function extractOriginalPost(container) {
-    // Modern Reddit: Look for post content
-    
-    // Try to find post title and body
     const postTitle = document.querySelector('h1[slot="title"]')?.innerText ||
                      document.querySelector('[data-testid="post-title"]')?.innerText ||
                      document.querySelector('shreddit-post h1')?.innerText ||
@@ -657,7 +986,6 @@
       return `${postTitle}\n\n${postBody}`.trim();
     }
 
-    // Try to find the parent comment we're replying to
     const parentComment = container?.closest('shreddit-comment')?.querySelector('[slot="comment-body"]')?.innerText ||
                          container?.closest('.Comment')?.querySelector('[data-testid="comment"]')?.innerText ||
                          '';
@@ -666,7 +994,6 @@
       return parentComment;
     }
 
-    // Old Reddit
     const thing = container?.closest('.thing');
     if (thing) {
       const title = thing.querySelector('.title a')?.innerText || '';
@@ -674,133 +1001,12 @@
       return `${title}\n\n${body}`.trim();
     }
 
-    // Fallback: look for any visible post content
     const fallbackTitle = document.querySelector('.top-matter .title a')?.innerText ||
                          document.querySelector('.entry .title')?.innerText ||
                          '';
     const fallbackBody = document.querySelector('.usertext-body .md')?.innerText || '';
     
     return `${fallbackTitle}\n\n${fallbackBody}`.trim();
-  }
-
-  // Generate replies
-  async function generateReplies(panel) {
-    const resultsContainer = panel.querySelector('#replyforge-results');
-    const generateBtn = panel.querySelector('.tweetcraft-generate-btn');
-    
-    if (state.contextInvalidated) {
-      showContextInvalidatedError(resultsContainer);
-      return;
-    }
-    
-    const feedback = panel.querySelector('.tweetcraft-feedback-input').value;
-    const tone = panel.dataset.tone;
-    const originalPost = panel.dataset.originalPost;
-
-    // Show loading
-    state.isLoading = true;
-    generateBtn.disabled = true;
-    generateBtn.innerHTML = `
-      <svg class="spinning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-      </svg>
-      Generating...
-    `;
-    resultsContainer.innerHTML = `
-      <div class="tweetcraft-loading">
-        <div class="tweetcraft-spinner"></div>
-        <span>Crafting replies...</span>
-      </div>
-    `;
-
-    try {
-      const settings = await safeChromeStorageGet(['candidates']);
-
-      const response = await safeChromeSend({
-        type: 'GENERATE_REPLIES',
-        payload: {
-          originalTweet: originalPost,
-          tone,
-          context: '',
-          feedback,
-          numCandidates: settings.candidates || 3,
-          imageUrls: [],
-          platform: PLATFORM
-        }
-      });
-
-      if (response?.error) {
-        throw new Error(response.error);
-      }
-
-      state.candidates = response?.candidates || [];
-      state.lastCandidates = state.candidates;
-      state.selectedIndex = 0;
-      savePanelState();
-      renderResults(resultsContainer);
-
-    } catch (error) {
-      console.error('Writer Reddit error:', error);
-      
-      if (state.contextInvalidated || 
-          error.message?.includes('Extension context invalidated') || 
-          error.message?.includes('context invalidated')) {
-        showContextInvalidatedError(resultsContainer);
-      } else {
-        resultsContainer.innerHTML = `
-          <div class="tweetcraft-error replyforge-error">
-            <span>⚠️ ${error.message}</span>
-            <button class="tweetcraft-retry-btn replyforge-retry-btn">Retry</button>
-          </div>
-        `;
-        resultsContainer.querySelector('.tweetcraft-retry-btn')?.addEventListener('click', () => generateReplies(panel));
-      }
-    } finally {
-      state.isLoading = false;
-      if (generateBtn) {
-        generateBtn.disabled = false;
-        generateBtn.innerHTML = `
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-          </svg>
-          Generate
-        `;
-      }
-    }
-  }
-
-  // Render results
-  function renderResults(container) {
-    if (state.candidates.length === 0) {
-      container.innerHTML = `<div class="tweetcraft-empty">No replies generated. Try again with different instructions.</div>`;
-      return;
-    }
-
-    container.innerHTML = state.candidates.map((text, i) => `
-      <div class="tweetcraft-result ${i === state.selectedIndex ? 'selected' : ''}" data-index="${i}">
-        <div class="tweetcraft-result-text">${escapeHtml(text)}</div>
-        <div class="tweetcraft-result-footer">
-          <span class="tweetcraft-char-count">${text.length} chars</span>
-          <button class="tweetcraft-use-btn" data-index="${i}">Use this</button>
-        </div>
-      </div>
-    `).join('');
-
-    container.querySelectorAll('.tweetcraft-result').forEach(result => {
-      result.addEventListener('click', (e) => {
-        if (e.target.closest('.tweetcraft-use-btn')) return;
-        container.querySelectorAll('.tweetcraft-result').forEach(r => r.classList.remove('selected'));
-        result.classList.add('selected');
-        state.selectedIndex = parseInt(result.dataset.index);
-      });
-    });
-
-    container.querySelectorAll('.tweetcraft-use-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const index = parseInt(btn.dataset.index);
-        useReply(state.candidates[index]);
-      });
-    });
   }
 
   // Use selected reply
@@ -821,18 +1027,11 @@
         editable.dispatchEvent(new Event('input', { bubbles: true }));
         editable.dispatchEvent(new Event('change', { bubbles: true }));
       } else {
-        // contenteditable
         editable.textContent = text;
         editable.dispatchEvent(new InputEvent('input', { bubbles: true, data: text }));
       }
     }
 
-    // Clear candidates
-    state.candidates = [];
-    state.lastCandidates = [];
-    savePanelState();
-
-    // Close panel
     if (state.currentPanel) {
       state.currentPanel.classList.remove('visible');
       setTimeout(() => {

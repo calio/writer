@@ -1,33 +1,37 @@
 // Writer AI - Content Script for Twitter/X
-// Integrates with Twitter/X UI to provide AI-powered reply assistance
+// Integrates with Twitter/X UI to provide AI-powered reply assistance with conversational refinement
 
 (function() {
   'use strict';
 
   // State
   let state = {
-    candidates: [],
-    selectedIndex: 0,
+    // Conversation state
+    conversation: [], // Array of {role: 'user'|'assistant', content: string, images?: string[], candidates?: string[], selectedIndex?: number, id: string}
     isLoading: false,
     currentTextarea: null,
     currentPanel: null,
     userHistory: [],
     // Persisted state
     tone: 'match',
-    feedback: '',
-    lastCandidates: [],
     contextInvalidated: false,
     // URL tracking for context clearing
-    lastUrl: window.location.href
+    lastUrl: window.location.href,
+    // Original context
+    originalTweet: '',
+    originalImages: []
   };
+
+  // Generate unique ID
+  function generateId() {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2);
+  }
 
   // Check if extension context is still valid
   function isExtensionContextValid() {
     try {
-      // Multiple checks to ensure context is truly valid
       if (!chrome?.runtime) return false;
       if (!chrome.runtime.id) return false;
-      // Try to access storage - this will throw if context is invalid
       if (!chrome?.storage?.local) return false;
       return true;
     } catch (e) {
@@ -86,12 +90,11 @@
   // Safe wrapper for Chrome storage set
   async function safeChromeStorageSet(data) {
     if (!isExtensionContextValid()) {
-      return; // Silently fail for set operations
+      return;
     }
     try {
       await chrome.storage.local.set(data);
     } catch (e) {
-      // Silently fail for storage set
       console.log('Writer: Could not save to storage', e.message);
     }
   }
@@ -100,23 +103,19 @@
   function init() {
     console.log('Writer: Initializing...');
     
-    // Remove any stale buttons from previous extension loads
     document.querySelectorAll('.tweetcraft-btn-wrapper').forEach(el => el.remove());
     document.querySelectorAll('.tweetcraft-inline-panel').forEach(el => el.remove());
     
-    loadPanelState(); // Load persisted state
-    setupGlobalClickHandler(); // Use event delegation for reliable click handling
-    setupUrlTracking(); // Track URL changes to clear context
+    loadPanelState();
+    setupGlobalClickHandler();
+    setupUrlTracking();
     observeDOM();
     loadUserHistory();
   }
 
   // Setup URL tracking to clear context on navigation
   function setupUrlTracking() {
-    // Check for URL changes periodically (for SPA navigation)
     setInterval(checkUrlChange, 500);
-    
-    // Also listen for popstate events
     window.addEventListener('popstate', checkUrlChange);
   }
 
@@ -132,22 +131,20 @@
 
   // Clear context when URL changes
   async function clearContextOnUrlChange() {
-    // Clear candidates
-    state.candidates = [];
-    state.lastCandidates = [];
-    state.feedback = '';
+    state.conversation = [];
+    state.originalTweet = '';
+    state.originalImages = [];
     
-    // Close any open panel
     if (state.currentPanel) {
       state.currentPanel.remove();
       state.currentPanel = null;
       document.querySelectorAll('.tweetcraft-btn.active').forEach(b => b.classList.remove('active'));
     }
     
-    // Persist the cleared state
     await safeChromeStorageSet({
-      panelCandidates: [],
-      panelFeedback: ''
+      panelConversation: [],
+      panelOriginalTweet: '',
+      panelOriginalImages: []
     });
     
     console.log('Writer: Context cleared for new URL');
@@ -155,7 +152,6 @@
   
   // Global click handler using event delegation
   function setupGlobalClickHandler() {
-    // Use multiple event types to ensure we catch the click
     const handleTweetCraftClick = (e) => {
       const btn = e.target.closest('.tweetcraft-btn');
       const wrapper = e.target.closest('.tweetcraft-btn-wrapper');
@@ -168,7 +164,6 @@
       
       console.log('Writer: Button clicked via delegation!', e.type);
       
-      // Debounce to prevent multiple fires
       if (window._tweetcraftClickDebounce) return;
       window._tweetcraftClickDebounce = true;
       setTimeout(() => { window._tweetcraftClickDebounce = false; }, 300);
@@ -176,7 +171,6 @@
       handleButtonClick(btn || wrapper.querySelector('.tweetcraft-btn'));
     };
     
-    // Listen on multiple event types at capture phase
     document.addEventListener('click', handleTweetCraftClick, true);
     document.addEventListener('pointerdown', handleTweetCraftClick, true);
     document.addEventListener('mousedown', handleTweetCraftClick, true);
@@ -185,18 +179,14 @@
   // Handle button click
   function handleButtonClick(btn) {
     const wrapper = btn.closest('.tweetcraft-btn-wrapper') || btn.parentElement;
-    
-    // Find container and textarea fresh at click time
     const toolbar = wrapper.closest('[role="group"]') || wrapper.closest('[role="tablist"]') || wrapper.closest('nav');
     const container = toolbar?.closest('form') || 
                      toolbar?.closest('[role="dialog"]') || 
                      toolbar?.closest('[data-testid="tweetTextarea_0"]')?.parentElement?.parentElement ||
                      toolbar?.parentElement?.parentElement;
     
-    // Try multiple ways to find the textarea
     let textarea = container?.querySelector('[data-testid="tweetTextarea_0"], [data-testid="tweetTextarea_1"], [role="textbox"]');
     
-    // If not found in container, search up and around the toolbar
     if (!textarea) {
       const parentContainer = toolbar?.closest('[data-testid="primaryColumn"]') || 
                              toolbar?.closest('[role="dialog"]') ||
@@ -204,7 +194,6 @@
       textarea = parentContainer?.querySelector('[data-testid="tweetTextarea_0"], [data-testid="tweetTextarea_1"], [role="textbox"]');
     }
     
-    // Last resort - find any visible textarea on the page
     if (!textarea) {
       textarea = document.querySelector('[data-testid="tweetTextarea_0"]') || 
                 document.querySelector('[role="dialog"] [role="textbox"]');
@@ -219,11 +208,12 @@
     if (state.contextInvalidated) return;
     
     try {
-      const saved = await safeChromeStorageGet(['panelTone', 'panelFeedback', 'panelCandidates']);
+      const saved = await safeChromeStorageGet(['panelTone', 'panelConversation', 'panelOriginalTweet', 'panelOriginalImages']);
       if (saved.panelTone) state.tone = saved.panelTone;
-      if (saved.panelFeedback) state.feedback = saved.panelFeedback;
-      if (saved.panelCandidates) state.lastCandidates = saved.panelCandidates;
-      console.log('Writer: Loaded panel state', { tone: state.tone, feedback: state.feedback?.substring(0, 20) });
+      if (saved.panelConversation) state.conversation = saved.panelConversation;
+      if (saved.panelOriginalTweet) state.originalTweet = saved.panelOriginalTweet;
+      if (saved.panelOriginalImages) state.originalImages = saved.panelOriginalImages;
+      console.log('Writer: Loaded panel state', { tone: state.tone, conversationLength: state.conversation.length });
     } catch (error) {
       console.log('Writer: Could not load panel state', error.message);
     }
@@ -235,8 +225,9 @@
     
     await safeChromeStorageSet({
       panelTone: state.tone,
-      panelFeedback: state.feedback,
-      panelCandidates: state.lastCandidates
+      panelConversation: state.conversation,
+      panelOriginalTweet: state.originalTweet,
+      panelOriginalImages: state.originalImages
     });
   }
 
@@ -284,7 +275,6 @@
     wrapper.className = 'tweetcraft-btn-wrapper';
     wrapper.style.cssText = 'display: inline-flex; align-items: center; justify-content: center;';
     
-    // Use actual button element for better compatibility
     const btn = document.createElement('button');
     btn.className = 'tweetcraft-btn';
     btn.type = 'button';
@@ -297,9 +287,6 @@
         <path d="M2 12L12 17L22 12"/>
       </svg>
     `;
-    
-    // Event handling is done via delegation in setupGlobalClickHandler()
-    // No need to attach listeners here - they would be lost on extension reload anyway
 
     wrapper.appendChild(btn);
     return wrapper;
@@ -307,16 +294,9 @@
 
   // Toggle inline panel
   function toggleInlinePanel(textarea, container, btn) {
-    // Remove existing panel if any
     const existingPanel = document.querySelector('.tweetcraft-inline-panel');
     if (existingPanel) {
-      // Save state before closing
-      const feedbackInput = existingPanel.querySelector('.tweetcraft-feedback-input');
-      if (feedbackInput) {
-        state.feedback = feedbackInput.value;
-      }
       savePanelState();
-      
       existingPanel.remove();
       state.currentPanel = null;
       document.querySelectorAll('.tweetcraft-btn.active, .tweetcraft-btn-wrapper .tweetcraft-btn.active').forEach(b => b.classList.remove('active'));
@@ -326,56 +306,45 @@
     state.currentTextarea = textarea;
     btn.classList.add('active');
     
-    // Create panel as a fixed overlay
-    const panel = createInlinePanel(container);
+    // Extract context if this is a fresh conversation
+    if (state.conversation.length === 0) {
+      state.originalTweet = extractOriginalTweet(container);
+      state.originalImages = extractTweetImages(container);
+    }
+    
+    const panel = createConversationalPanel();
     state.currentPanel = panel;
 
-    // Get button position for panel placement
     const wrapper = btn.closest('.tweetcraft-btn-wrapper') || btn;
     const rect = wrapper.getBoundingClientRect();
-    
-    // Calculate center position
-    const panelWidth = 450;
+    const panelWidth = 480;
     const viewportWidth = window.innerWidth;
     let leftPos = rect.left + (rect.width / 2) - (panelWidth / 2);
-    
-    // Keep panel within viewport
     leftPos = Math.max(10, Math.min(leftPos, viewportWidth - panelWidth - 10));
     
-    // Position panel below the toolbar
     panel.style.position = 'fixed';
     panel.style.left = `${leftPos}px`;
-    panel.style.top = `${Math.min(rect.bottom + 10, window.innerHeight - 400)}px`;
+    panel.style.top = `${Math.min(rect.bottom + 10, window.innerHeight - 500)}px`;
     panel.style.width = `${panelWidth}px`;
     panel.style.maxWidth = 'calc(100vw - 20px)';
     panel.style.maxHeight = 'calc(100vh - 100px)';
-    panel.style.overflowY = 'auto';
     panel.style.zIndex = '10000';
     panel.style.boxShadow = '0 8px 32px rgba(0,0,0,0.3)';
     
-    // Append to body to avoid Twitter's DOM manipulation
     document.body.appendChild(panel);
     console.log('Writer: Panel added to body as fixed overlay');
 
-    // Animate in
     requestAnimationFrame(() => panel.classList.add('visible'));
     
-    // Auto-generate if no cached candidates
-    if (!state.lastCandidates || state.lastCandidates.length === 0) {
-      // Small delay to let the panel render first
-      setTimeout(() => generateReplies(panel), 300);
+    // Auto-generate if fresh conversation
+    if (state.conversation.length === 0) {
+      setTimeout(() => sendMessage(panel, 'Generate reply options'), 300);
     }
     
     // Close when clicking outside
     const closeOnClickOutside = (e) => {
       if (!panel.contains(e.target) && !btn.contains(e.target) && !wrapper.contains(e.target)) {
-        // Save feedback before closing
-        const feedbackInput = panel.querySelector('.tweetcraft-feedback-input');
-        if (feedbackInput) {
-          state.feedback = feedbackInput.value;
-          savePanelState();
-        }
-        
+        savePanelState();
         panel.classList.remove('visible');
         setTimeout(() => {
           panel.remove();
@@ -388,17 +357,12 @@
     setTimeout(() => document.addEventListener('click', closeOnClickOutside), 100);
   }
 
-  // Create inline panel
-  function createInlinePanel(container) {
-    const originalTweet = extractOriginalTweet(container);
-    const imageUrls = extractTweetImages(container);
-
-    // Use persisted tone and feedback
+  // Create conversational panel
+  function createConversationalPanel() {
     const savedTone = state.tone || 'match';
-    const savedFeedback = state.feedback || '';
 
     const panel = document.createElement('div');
-    panel.className = 'tweetcraft-inline-panel';
+    panel.className = 'tweetcraft-inline-panel tweetcraft-conversational';
     panel.innerHTML = `
       <div class="tweetcraft-panel-header">
         <div class="tweetcraft-panel-title">
@@ -408,9 +372,16 @@
             <path d="M2 12L12 17L22 12"/>
           </svg>
           <span>Writer AI</span>
-          ${imageUrls.length > 0 ? `<span class="tweetcraft-vision-badge">📷 ${imageUrls.length} image${imageUrls.length > 1 ? 's' : ''}</span>` : ''}
+          ${state.originalImages.length > 0 ? `<span class="tweetcraft-vision-badge">📷 ${state.originalImages.length}</span>` : ''}
         </div>
-        <button class="tweetcraft-panel-close" title="Close">×</button>
+        <div class="tweetcraft-header-actions">
+          <button class="tweetcraft-new-chat-btn" title="Start new conversation">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+          </button>
+          <button class="tweetcraft-panel-close" title="Close">×</button>
+        </div>
       </div>
       
       <div class="tweetcraft-tone-row">
@@ -421,53 +392,57 @@
         <button class="tweetcraft-tone-chip ${savedTone === 'thoughtful' ? 'active' : ''}" data-tone="thoughtful">Deep</button>
       </div>
 
-      <div class="tweetcraft-feedback-row">
-        <input type="text" class="tweetcraft-feedback-input" placeholder="Instructions: e.g., make it shorter, add a question..." value="${escapeHtml(savedFeedback)}" />
-        <button class="tweetcraft-generate-btn">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-          </svg>
-          Generate
-        </button>
+      ${state.originalTweet ? `
+        <div class="tweetcraft-context-preview">
+          <div class="tweetcraft-context-label">Replying to:</div>
+          <div class="tweetcraft-context-text">${escapeHtml(state.originalTweet.substring(0, 150))}${state.originalTweet.length > 150 ? '...' : ''}</div>
+        </div>
+      ` : ''}
+
+      <div class="tweetcraft-conversation" id="tweetcraft-conversation">
+        <!-- Conversation messages will be rendered here -->
       </div>
 
-      <div class="tweetcraft-results" id="tweetcraft-results">
-        <div class="tweetcraft-empty">Click "Generate" to create AI-powered replies</div>
+      <div class="tweetcraft-input-area">
+        <div class="tweetcraft-input-row">
+          <div class="tweetcraft-input-wrapper">
+            <input type="text" class="tweetcraft-chat-input" placeholder="Refine: e.g., make it shorter, add humor, be more direct..." />
+            <input type="file" class="tweetcraft-image-input" accept="image/*" multiple hidden />
+            <button class="tweetcraft-attach-btn" title="Attach images">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21,15 16,10 5,21"/>
+              </svg>
+            </button>
+          </div>
+          <button class="tweetcraft-send-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"/>
+              <polygon points="22,2 15,22 11,13 2,9 22,2"/>
+            </svg>
+          </button>
+        </div>
+        <div class="tweetcraft-attached-images" id="tweetcraft-attached-images"></div>
       </div>
     `;
 
-    // Store data
-    panel.dataset.originalTweet = originalTweet;
-    panel.dataset.imageUrls = JSON.stringify(imageUrls);
     panel.dataset.tone = savedTone;
-
-    // Setup event listeners
-    setupPanelListeners(panel);
-
-    // Show last candidates if available
-    if (state.lastCandidates && state.lastCandidates.length > 0) {
-      state.candidates = state.lastCandidates;
-      state.selectedIndex = 0;
-      setTimeout(() => {
-        const resultsContainer = panel.querySelector('#tweetcraft-results');
-        if (resultsContainer) renderResults(resultsContainer);
-      }, 50);
-    }
+    
+    // Store attached images for current message
+    panel._attachedImages = [];
+    
+    setupConversationalPanelListeners(panel);
+    renderConversation(panel);
 
     return panel;
   }
 
-  // Setup panel event listeners
-  function setupPanelListeners(panel) {
+  // Setup conversational panel event listeners
+  function setupConversationalPanelListeners(panel) {
     // Close button
     panel.querySelector('.tweetcraft-panel-close').addEventListener('click', () => {
-      // Save feedback before closing
-      const feedbackInput = panel.querySelector('.tweetcraft-feedback-input');
-      if (feedbackInput) {
-        state.feedback = feedbackInput.value;
-        savePanelState();
-      }
-      
+      savePanelState();
       panel.classList.remove('visible');
       setTimeout(() => {
         panel.remove();
@@ -476,52 +451,410 @@
       }, 200);
     });
 
+    // New chat button
+    panel.querySelector('.tweetcraft-new-chat-btn').addEventListener('click', () => {
+      state.conversation = [];
+      panel._attachedImages = [];
+      renderConversation(panel);
+      renderAttachedImages(panel);
+      savePanelState();
+    });
+
     // Tone chips
     panel.querySelectorAll('.tweetcraft-tone-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         panel.querySelectorAll('.tweetcraft-tone-chip').forEach(c => c.classList.remove('active'));
         chip.classList.add('active');
         panel.dataset.tone = chip.dataset.tone;
-        
-        // Save tone state
         state.tone = chip.dataset.tone;
         savePanelState();
       });
     });
 
-    // Generate button
-    panel.querySelector('.tweetcraft-generate-btn').addEventListener('click', () => {
-      generateReplies(panel);
-    });
-
-    // Feedback input - save on change
-    const feedbackInput = panel.querySelector('.tweetcraft-feedback-input');
-    feedbackInput.addEventListener('input', () => {
-      state.feedback = feedbackInput.value;
-      // Debounce save
-      clearTimeout(window.tweetcraftFeedbackSaveTimeout);
-      window.tweetcraftFeedbackSaveTimeout = setTimeout(savePanelState, 500);
-    });
-
-    // Enter key in feedback input
-    feedbackInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+    // Chat input
+    const chatInput = panel.querySelector('.tweetcraft-chat-input');
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        generateReplies(panel);
+        const message = chatInput.value.trim();
+        if (message || panel._attachedImages.length > 0) {
+          sendMessage(panel, message);
+          chatInput.value = '';
+        }
       }
     });
+
+    // Send button
+    panel.querySelector('.tweetcraft-send-btn').addEventListener('click', () => {
+      const message = chatInput.value.trim();
+      if (message || panel._attachedImages.length > 0) {
+        sendMessage(panel, message);
+        chatInput.value = '';
+      }
+    });
+
+    // Image attachment
+    const imageInput = panel.querySelector('.tweetcraft-image-input');
+    const attachBtn = panel.querySelector('.tweetcraft-attach-btn');
+    
+    attachBtn.addEventListener('click', () => {
+      imageInput.click();
+    });
+
+    imageInput.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files);
+      for (const file of files) {
+        if (file.type.startsWith('image/')) {
+          const dataUrl = await fileToDataUrl(file);
+          panel._attachedImages.push(dataUrl);
+        }
+      }
+      renderAttachedImages(panel);
+      imageInput.value = '';
+    });
+  }
+
+  // Convert file to data URL
+  function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Render attached images preview
+  function renderAttachedImages(panel) {
+    const container = panel.querySelector('#tweetcraft-attached-images');
+    if (panel._attachedImages.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+
+    container.innerHTML = panel._attachedImages.map((url, i) => `
+      <div class="tweetcraft-attached-image" data-index="${i}">
+        <img src="${url}" alt="Attached image" />
+        <button class="tweetcraft-remove-image" data-index="${i}">×</button>
+      </div>
+    `).join('');
+
+    container.querySelectorAll('.tweetcraft-remove-image').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const index = parseInt(btn.dataset.index);
+        panel._attachedImages.splice(index, 1);
+        renderAttachedImages(panel);
+      });
+    });
+  }
+
+  // Render conversation
+  function renderConversation(panel) {
+    const container = panel.querySelector('#tweetcraft-conversation');
+    
+    if (state.conversation.length === 0) {
+      container.innerHTML = `
+        <div class="tweetcraft-empty-conversation">
+          <div class="tweetcraft-empty-icon">💬</div>
+          <div class="tweetcraft-empty-text">Start a conversation to craft your perfect reply</div>
+          <div class="tweetcraft-empty-hint">The AI will generate multiple options you can refine</div>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = state.conversation.map((msg, index) => {
+      if (msg.role === 'user') {
+        return renderUserMessage(msg, index);
+      } else {
+        return renderAssistantMessage(msg, index);
+      }
+    }).join('');
+
+    // Setup message event listeners
+    setupMessageListeners(panel, container);
+    
+    // Scroll to bottom
+    container.scrollTop = container.scrollHeight;
+  }
+
+  // Render user message
+  function renderUserMessage(msg, index) {
+    const hasImages = msg.images && msg.images.length > 0;
+    return `
+      <div class="tweetcraft-message tweetcraft-user-message" data-index="${index}" data-id="${msg.id}">
+        <div class="tweetcraft-message-header">
+          <span class="tweetcraft-message-role">You</span>
+          <div class="tweetcraft-message-actions">
+            <button class="tweetcraft-edit-btn" data-index="${index}" title="Edit & regenerate from here">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="tweetcraft-message-content ${msg.isEditing ? 'editing' : ''}">
+          ${msg.isEditing ? `
+            <textarea class="tweetcraft-edit-textarea" data-index="${index}">${escapeHtml(msg.content)}</textarea>
+            <div class="tweetcraft-edit-actions">
+              <button class="tweetcraft-cancel-edit-btn" data-index="${index}">Cancel</button>
+              <button class="tweetcraft-save-edit-btn" data-index="${index}">Regenerate</button>
+            </div>
+          ` : `
+            <div class="tweetcraft-message-text">${escapeHtml(msg.content)}</div>
+          `}
+          ${hasImages ? `
+            <div class="tweetcraft-message-images">
+              ${msg.images.map(url => `<img src="${url}" alt="Attached" />`).join('')}
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  // Render assistant message
+  function renderAssistantMessage(msg, index) {
+    const candidates = msg.candidates || [];
+    const selectedIndex = msg.selectedIndex || 0;
+
+    if (candidates.length === 0) {
+      return `
+        <div class="tweetcraft-message tweetcraft-assistant-message" data-index="${index}" data-id="${msg.id}">
+          <div class="tweetcraft-message-header">
+            <span class="tweetcraft-message-role">Writer AI</span>
+          </div>
+          <div class="tweetcraft-message-content">
+            <div class="tweetcraft-message-text">${escapeHtml(msg.content || 'No response')}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="tweetcraft-message tweetcraft-assistant-message" data-index="${index}" data-id="${msg.id}">
+        <div class="tweetcraft-message-header">
+          <span class="tweetcraft-message-role">Writer AI</span>
+          <span class="tweetcraft-candidates-count">${candidates.length} options</span>
+        </div>
+        <div class="tweetcraft-candidates-list">
+          ${candidates.map((text, i) => `
+            <div class="tweetcraft-candidate ${i === selectedIndex ? 'selected' : ''}" data-msg-index="${index}" data-candidate-index="${i}">
+              <div class="tweetcraft-candidate-text">${escapeHtml(text)}</div>
+              <div class="tweetcraft-candidate-footer">
+                <span class="tweetcraft-char-count ${text.length > 280 ? 'over' : ''}">${text.length}/280</span>
+                <button class="tweetcraft-use-btn" data-msg-index="${index}" data-candidate-index="${i}">Use this</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  // Setup message event listeners
+  function setupMessageListeners(panel, container) {
+    // Edit buttons
+    container.querySelectorAll('.tweetcraft-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const index = parseInt(btn.dataset.index);
+        state.conversation[index].isEditing = true;
+        renderConversation(panel);
+      });
+    });
+
+    // Cancel edit buttons
+    container.querySelectorAll('.tweetcraft-cancel-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const index = parseInt(btn.dataset.index);
+        state.conversation[index].isEditing = false;
+        renderConversation(panel);
+      });
+    });
+
+    // Save edit buttons (fork conversation)
+    container.querySelectorAll('.tweetcraft-save-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const index = parseInt(btn.dataset.index);
+        const textarea = container.querySelector(`.tweetcraft-edit-textarea[data-index="${index}"]`);
+        const newContent = textarea.value.trim();
+        
+        if (newContent) {
+          // Fork: truncate conversation from this point and regenerate
+          state.conversation = state.conversation.slice(0, index);
+          state.conversation[index] = {
+            ...state.conversation[index],
+            content: newContent,
+            isEditing: false
+          };
+          // Remove all messages after this one (will regenerate)
+          sendMessage(panel, newContent, [], true);
+        }
+      });
+    });
+
+    // Candidate selection
+    container.querySelectorAll('.tweetcraft-candidate').forEach(candidate => {
+      candidate.addEventListener('click', (e) => {
+        if (e.target.closest('.tweetcraft-use-btn')) return;
+        
+        const msgIndex = parseInt(candidate.dataset.msgIndex);
+        const candIndex = parseInt(candidate.dataset.candidateIndex);
+        
+        state.conversation[msgIndex].selectedIndex = candIndex;
+        savePanelState();
+        renderConversation(panel);
+      });
+    });
+
+    // Use buttons
+    container.querySelectorAll('.tweetcraft-use-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const msgIndex = parseInt(btn.dataset.msgIndex);
+        const candIndex = parseInt(btn.dataset.candidateIndex);
+        const text = state.conversation[msgIndex].candidates[candIndex];
+        useReply(text);
+      });
+    });
+  }
+
+  // Send message
+  async function sendMessage(panel, userMessage, images = [], isEdit = false) {
+    const conversationContainer = panel.querySelector('#tweetcraft-conversation');
+    
+    if (state.contextInvalidated) {
+      showContextInvalidatedError(conversationContainer);
+      return;
+    }
+
+    // Get attached images if not editing
+    const attachedImages = isEdit ? images : [...(panel._attachedImages || [])];
+    
+    // Add user message to conversation (if not just regenerating)
+    if (!isEdit || state.conversation.length === 0) {
+      state.conversation.push({
+        id: generateId(),
+        role: 'user',
+        content: userMessage,
+        images: attachedImages
+      });
+    }
+
+    // Clear attached images
+    panel._attachedImages = [];
+    renderAttachedImages(panel);
+
+    // Show loading state
+    const loadingId = generateId();
+    state.conversation.push({
+      id: loadingId,
+      role: 'assistant',
+      content: '',
+      candidates: [],
+      isLoading: true
+    });
+    
+    renderConversation(panel);
+    state.isLoading = true;
+
+    try {
+      const settings = await safeChromeStorageGet(['candidates', 'useHistory']);
+      
+      // Build conversation context for the AI
+      let conversationContext = buildConversationContext();
+      
+      let styleContext = '';
+      if (settings.useHistory !== false && state.userHistory.length > 0) {
+        styleContext = `\n\nUser's previous tweets for style reference:\n${state.userHistory.slice(0, 5).map((t, i) => `${i + 1}. "${t}"`).join('\n')}`;
+      }
+
+      // Combine all images (original + conversation images)
+      const allImages = [...state.originalImages];
+      state.conversation.forEach(msg => {
+        if (msg.images) allImages.push(...msg.images);
+      });
+
+      const response = await safeChromeSend({
+        type: 'GENERATE_REPLIES',
+        payload: {
+          originalTweet: state.originalTweet,
+          tone: panel.dataset.tone,
+          context: styleContext,
+          feedback: userMessage,
+          conversationContext: conversationContext,
+          numCandidates: settings.candidates || 3,
+          imageUrls: allImages.slice(0, 4) // Limit images
+        }
+      });
+
+      if (response?.error) {
+        throw new Error(response.error);
+      }
+
+      // Update the loading message with actual response
+      const loadingIndex = state.conversation.findIndex(m => m.id === loadingId);
+      if (loadingIndex !== -1) {
+        state.conversation[loadingIndex] = {
+          id: loadingId,
+          role: 'assistant',
+          content: '',
+          candidates: response?.candidates || [],
+          selectedIndex: 0,
+          isLoading: false
+        };
+      }
+
+      savePanelState();
+      renderConversation(panel);
+
+    } catch (error) {
+      console.error('Writer error:', error);
+      
+      // Update loading message with error
+      const loadingIndex = state.conversation.findIndex(m => m.id === loadingId);
+      if (loadingIndex !== -1) {
+        state.conversation[loadingIndex] = {
+          id: loadingId,
+          role: 'assistant',
+          content: `Error: ${error.message}`,
+          candidates: [],
+          isLoading: false,
+          isError: true
+        };
+      }
+      
+      renderConversation(panel);
+    } finally {
+      state.isLoading = false;
+    }
+  }
+
+  // Build conversation context for AI
+  function buildConversationContext() {
+    if (state.conversation.length <= 1) return '';
+    
+    let context = '\n\nPREVIOUS CONVERSATION:\n';
+    state.conversation.slice(0, -1).forEach((msg, i) => {
+      if (msg.role === 'user') {
+        context += `User instruction ${i + 1}: "${msg.content}"\n`;
+      } else if (msg.candidates && msg.candidates.length > 0) {
+        const selected = msg.candidates[msg.selectedIndex || 0];
+        context += `AI generated (selected): "${selected}"\n`;
+      }
+    });
+    context += '\nNow refine based on the latest instruction above.\n';
+    return context;
   }
 
   // Extract original tweet text
   function extractOriginalTweet(container) {
-    // Try to find the tweet we're replying to
     const article = container?.closest('article') || document.querySelector('article[data-testid="tweet"]');
     if (article) {
       const tweetText = article.querySelector('[data-testid="tweetText"]');
       if (tweetText) return tweetText.innerText;
     }
 
-    // Look in dialogs for quoted tweet
     const dialog = container?.closest('[role="dialog"]');
     if (dialog) {
       const tweetText = dialog.querySelector('[data-testid="tweetText"]');
@@ -534,19 +867,15 @@
   // Extract images from tweet
   function extractTweetImages(container) {
     const imageUrls = [];
-    
-    // Find the tweet article
     const article = container?.closest('article') || document.querySelector('article[data-testid="tweet"]');
     const dialog = container?.closest('[role="dialog"]');
     const searchContainer = dialog || article;
     
     if (!searchContainer) return imageUrls;
 
-    // Find images
     const images = searchContainer.querySelectorAll('img[src*="pbs.twimg.com/media"], img[src*="twimg.com/media"]');
     images.forEach(img => {
       let src = img.src;
-      // Get higher quality version
       if (src.includes('name=')) {
         src = src.replace(/name=\w+/, 'name=large');
       }
@@ -555,7 +884,6 @@
       }
     });
 
-    // Find video thumbnails
     const videoThumbs = searchContainer.querySelectorAll('video[poster]');
     videoThumbs.forEach(video => {
       if (video.poster && !imageUrls.includes(video.poster)) {
@@ -563,147 +891,15 @@
       }
     });
 
-    return imageUrls.slice(0, 4); // Limit to 4 images
-  }
-
-  // Generate replies
-  async function generateReplies(panel) {
-    const resultsContainer = panel.querySelector('#tweetcraft-results');
-    const generateBtn = panel.querySelector('.tweetcraft-generate-btn');
-    
-    // Check if extension context is already known to be invalid
-    if (state.contextInvalidated) {
-      showContextInvalidatedError(resultsContainer);
-      return;
-    }
-    
-    const feedback = panel.querySelector('.tweetcraft-feedback-input').value;
-    const tone = panel.dataset.tone;
-    const originalTweet = panel.dataset.originalTweet;
-    const imageUrls = JSON.parse(panel.dataset.imageUrls || '[]');
-
-    // Show loading
-    state.isLoading = true;
-    generateBtn.disabled = true;
-    generateBtn.innerHTML = `
-      <svg class="spinning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-      </svg>
-      Generating...
-    `;
-    resultsContainer.innerHTML = `
-      <div class="tweetcraft-loading">
-        <div class="tweetcraft-spinner"></div>
-        <span>Crafting replies...</span>
-      </div>
-    `;
-
-    try {
-      // Use safe wrappers for Chrome API calls
-      const settings = await safeChromeStorageGet(['candidates', 'useHistory']);
-      
-      let context = '';
-      if (settings.useHistory !== false && state.userHistory.length > 0) {
-        context = `\n\nUser's previous tweets for style reference:\n${state.userHistory.slice(0, 5).map((t, i) => `${i + 1}. "${t}"`).join('\n')}`;
-      }
-
-      const response = await safeChromeSend({
-        type: 'GENERATE_REPLIES',
-        payload: {
-          originalTweet,
-          tone,
-          context,
-          feedback,
-          numCandidates: settings.candidates || 3,
-          imageUrls
-        }
-      });
-
-      if (response?.error) {
-        throw new Error(response.error);
-      }
-
-      state.candidates = response?.candidates || [];
-      state.lastCandidates = state.candidates; // Save for persistence
-      state.selectedIndex = 0;
-      savePanelState(); // Persist candidates
-      renderResults(resultsContainer);
-
-    } catch (error) {
-      console.error('Writer error:', error);
-      
-      // Check if it's a context invalidation error
-      if (state.contextInvalidated || 
-          error.message?.includes('Extension context invalidated') || 
-          error.message?.includes('context invalidated')) {
-        showContextInvalidatedError(resultsContainer);
-      } else {
-        resultsContainer.innerHTML = `
-          <div class="tweetcraft-error">
-            <span>⚠️ ${error.message}</span>
-            <button class="tweetcraft-retry-btn">Retry</button>
-          </div>
-        `;
-        resultsContainer.querySelector('.tweetcraft-retry-btn')?.addEventListener('click', () => generateReplies(panel));
-      }
-    } finally {
-      state.isLoading = false;
-      if (generateBtn) {
-        generateBtn.disabled = false;
-        generateBtn.innerHTML = `
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-          </svg>
-          Generate
-        `;
-      }
-    }
-  }
-
-  // Render results
-  function renderResults(container) {
-    if (state.candidates.length === 0) {
-      container.innerHTML = `<div class="tweetcraft-empty">No replies generated. Try again with different instructions.</div>`;
-      return;
-    }
-
-    container.innerHTML = state.candidates.map((text, i) => `
-      <div class="tweetcraft-result ${i === state.selectedIndex ? 'selected' : ''}" data-index="${i}">
-        <div class="tweetcraft-result-text">${escapeHtml(text)}</div>
-        <div class="tweetcraft-result-footer">
-          <span class="tweetcraft-char-count ${text.length > 280 ? 'over' : ''}">${text.length}/280</span>
-          <button class="tweetcraft-use-btn" data-index="${i}">Use this</button>
-        </div>
-      </div>
-    `).join('');
-
-    // Click to select
-    container.querySelectorAll('.tweetcraft-result').forEach(result => {
-      result.addEventListener('click', (e) => {
-        if (e.target.closest('.tweetcraft-use-btn')) return;
-        container.querySelectorAll('.tweetcraft-result').forEach(r => r.classList.remove('selected'));
-        result.classList.add('selected');
-        state.selectedIndex = parseInt(result.dataset.index);
-      });
-    });
-
-    // Use buttons
-    container.querySelectorAll('.tweetcraft-use-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const index = parseInt(btn.dataset.index);
-        useReply(state.candidates[index]);
-      });
-    });
+    return imageUrls.slice(0, 4);
   }
 
   // Use selected reply
   function useReply(text) {
     if (!text) return;
 
-    // Find the textarea if not already set
     let editable = state.currentTextarea;
     
-    // If no textarea stored, find it fresh
     if (!editable) {
       editable = document.querySelector('[role="dialog"] [data-testid="tweetTextarea_0"]') ||
                 document.querySelector('[role="dialog"] [role="textbox"]') ||
@@ -711,7 +907,6 @@
                 document.querySelector('[role="textbox"]');
     }
 
-    // Find the actual editable element
     if (editable && !editable.isContentEditable) {
       editable = editable.closest('[role="textbox"]') || 
                  editable.querySelector('[data-text="true"]') ||
@@ -719,10 +914,8 @@
     }
 
     if (editable) {
-      // Focus and select all
       editable.focus();
       
-      // Try multiple methods to insert text
       if (document.execCommand) {
         document.execCommand('selectAll', false, null);
         document.execCommand('insertText', false, text);
@@ -731,17 +924,12 @@
         editable.dispatchEvent(new InputEvent('input', { bubbles: true, data: text }));
       }
       
-      // Dispatch additional events for React
       editable.dispatchEvent(new Event('input', { bubbles: true }));
       editable.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
-    // Clear candidates after use (user will want fresh replies for next tweet)
-    state.candidates = [];
-    state.lastCandidates = [];
-    savePanelState();
-
-    // Close panel
+    // Don't clear conversation - user might want to continue refining
+    // Just close the panel
     if (state.currentPanel) {
       state.currentPanel.classList.remove('visible');
       setTimeout(() => {

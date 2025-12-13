@@ -13,7 +13,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Handle reply generation
 async function handleGenerateReplies(payload) {
-  const { originalTweet, tone, context, feedback, numCandidates, imageUrls = [], platform = 'twitter' } = payload;
+  const { originalTweet, tone, context, feedback, numCandidates, imageUrls = [], platform = 'twitter', conversationContext = '' } = payload;
   
   // Get settings including user profile and documents
   const settings = await chrome.storage.local.get(['provider', 'apiKey', 'model', 'userProfile', 'uploadedDocuments']);
@@ -48,8 +48,8 @@ async function handleGenerateReplies(payload) {
     }
   }
 
-  // Build the prompt based on platform with profile and documents
-  const prompt = buildPrompt(originalTweet, tone, context, feedback, numCandidates, imageUrls.length > 0, platform, userProfileContext, documentContext);
+  // Build the prompt based on platform with profile, documents, and conversation context
+  const prompt = buildPrompt(originalTweet, tone, context, feedback, numCandidates, imageUrls.length > 0, platform, userProfileContext, documentContext, conversationContext);
 
   // Call the appropriate API
   let candidates;
@@ -63,7 +63,7 @@ async function handleGenerateReplies(payload) {
 }
 
 // Build the prompt for reply generation
-function buildPrompt(originalTweet, tone, context, feedback, numCandidates, hasImages = false, platform = 'twitter', userProfile = '', documentContext = '') {
+function buildPrompt(originalTweet, tone, context, feedback, numCandidates, hasImages = false, platform = 'twitter', userProfile = '', documentContext = '', conversationContext = '') {
   const toneDescriptions = {
     match: 'Match the style and voice based on the user\'s profile description',
     professional: 'Professional, polished, and business-appropriate',
@@ -76,6 +76,9 @@ function buildPrompt(originalTweet, tone, context, feedback, numCandidates, hasI
   const platformName = isReddit ? 'Reddit' : 'Twitter/X';
   const contentType = isReddit ? 'post/comment' : 'tweet';
   
+  // Check if this is a refinement (has conversation context)
+  const isRefinement = conversationContext && conversationContext.trim().length > 0;
+  
   let prompt = `You are a social media writing assistant helping compose ${platformName} replies.
 ${userProfile ? `
 USER PROFILE/PERSONA:
@@ -87,7 +90,7 @@ ${documentContext ? `
 REFERENCE DOCUMENTS (use this knowledge to inform your replies):
 ${documentContext}
 ` : ''}
-TASK: Generate ${numCandidates} different reply options for the following ${contentType}.
+TASK: ${isRefinement ? 'Refine and improve the previous reply options based on the user\'s feedback.' : `Generate ${numCandidates} different reply options for the following ${contentType}.`}
 
 ORIGINAL ${contentType.toUpperCase()} TO REPLY TO:
 "${originalTweet || `No specific ${contentType} provided - generate original content`}"
@@ -95,7 +98,8 @@ ${hasImages ? `\n[This ${contentType} also contains images/media which are provi
 
 TONE: ${toneDescriptions[tone] || toneDescriptions.match}
 ${context ? `\nUSER'S WRITING STYLE REFERENCE:${context}` : ''}
-${feedback ? `\nADDITIONAL INSTRUCTIONS FROM USER: ${feedback}` : ''}
+${conversationContext ? `${conversationContext}` : ''}
+${feedback ? `\n${isRefinement ? 'REFINEMENT REQUEST' : 'ADDITIONAL INSTRUCTIONS'}: ${feedback}` : ''}
 
 REQUIREMENTS:
 ${isReddit ? `1. Replies can be longer - Reddit allows detailed responses (aim for 1-4 sentences unless the topic warrants more)
@@ -106,15 +110,16 @@ ${isReddit ? `1. Replies can be longer - Reddit allows detailed responses (aim f
 5. Match the energy and context of the original ${contentType}
 6. Be engaging and encourage conversation when appropriate
 ${userProfile ? `7. CRITICAL: Stay true to the user's persona/profile described above` : ''}
-${isReddit ? `${userProfile ? '8' : '7'}. Reddit appreciates wit and clever responses - feel free to be creative
-${userProfile ? '9' : '8'}. Use appropriate formatting for Reddit if helpful (but keep it simple)` : `${userProfile ? '8' : '7'}. Avoid generic phrases like "Great point!" or "Couldn't agree more!"
-${userProfile ? '9' : '8'}. Don't use hashtags unless specifically relevant
-${userProfile ? '10' : '9'}. Don't use emojis unless the tone calls for it`}
-${hasImages ? `${isReddit ? (userProfile ? '10' : '9') : (userProfile ? '11' : '10')}. Reference or react to the visual content if relevant` : ''}
+${isRefinement ? `${userProfile ? '8' : '7'}. IMPORTANT: Incorporate the user's feedback/refinement request while maintaining quality` : ''}
+${isReddit ? `${userProfile ? (isRefinement ? '9' : '8') : (isRefinement ? '8' : '7')}. Reddit appreciates wit and clever responses - feel free to be creative
+${userProfile ? (isRefinement ? '10' : '9') : (isRefinement ? '9' : '8')}. Use appropriate formatting for Reddit if helpful (but keep it simple)` : `${userProfile ? (isRefinement ? '9' : '8') : (isRefinement ? '8' : '7')}. Avoid generic phrases like "Great point!" or "Couldn't agree more!"
+${userProfile ? (isRefinement ? '10' : '9') : (isRefinement ? '9' : '8')}. Don't use hashtags unless specifically relevant
+${userProfile ? (isRefinement ? '11' : '10') : (isRefinement ? '10' : '9')}. Don't use emojis unless the tone calls for it`}
+${hasImages ? `\n- Reference or react to the visual content if relevant` : ''}
 ${documentContext ? `\nNOTE: If relevant to the topic, you may draw on knowledge from the reference documents provided.` : ''}
 
 OUTPUT FORMAT:
-Return ONLY the replies, one per line, numbered 1-${numCandidates}.
+Return ONLY ${numCandidates} refined/improved replies, one per line, numbered 1-${numCandidates}.
 Do not include any other text, explanations, or formatting.
 
 Example output format:

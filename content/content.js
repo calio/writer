@@ -136,6 +136,7 @@
     state.originalImages = [];
     
     if (state.currentPanel) {
+      removeGlobalScrollPrevention();
       state.currentPanel.remove();
       state.currentPanel = null;
       document.querySelectorAll('.tweetcraft-btn.active').forEach(b => b.classList.remove('active'));
@@ -292,11 +293,38 @@
     return wrapper;
   }
 
+  // Global wheel handler to prevent background scroll when panel is open
+  let globalWheelHandler = null;
+  
+  function setupGlobalScrollPrevention(panel) {
+    globalWheelHandler = (e) => {
+      // Check if the event target is inside the panel
+      if (panel && panel.contains(e.target)) {
+        // Let the panel handle its own scrolling
+        e.stopPropagation();
+      } else if (panel) {
+        // Prevent scrolling outside the panel
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    
+    document.addEventListener('wheel', globalWheelHandler, { passive: false, capture: true });
+  }
+  
+  function removeGlobalScrollPrevention() {
+    if (globalWheelHandler) {
+      document.removeEventListener('wheel', globalWheelHandler, { capture: true });
+      globalWheelHandler = null;
+    }
+  }
+
   // Toggle inline panel
   function toggleInlinePanel(textarea, container, btn) {
     const existingPanel = document.querySelector('.tweetcraft-inline-panel');
     if (existingPanel) {
       savePanelState();
+      removeGlobalScrollPrevention();
       existingPanel.remove();
       state.currentPanel = null;
       document.querySelectorAll('.tweetcraft-btn.active, .tweetcraft-btn-wrapper .tweetcraft-btn.active').forEach(b => b.classList.remove('active'));
@@ -333,6 +361,9 @@
     
     document.body.appendChild(panel);
     console.log('Writer: Panel added to body as fixed overlay');
+    
+    // Setup global scroll prevention
+    setupGlobalScrollPrevention(panel);
 
     requestAnimationFrame(() => panel.classList.add('visible'));
     
@@ -345,6 +376,7 @@
     const closeOnClickOutside = (e) => {
       if (!panel.contains(e.target) && !btn.contains(e.target) && !wrapper.contains(e.target)) {
         savePanelState();
+        removeGlobalScrollPrevention();
         panel.classList.remove('visible');
         setTimeout(() => {
           panel.remove();
@@ -456,18 +488,43 @@
   // Setup conversational panel event listeners
   function setupConversationalPanelListeners(panel) {
     // Prevent scroll events from propagating to the page
+    const conversationContainer = panel.querySelector('#tweetcraft-conversation');
+    
+    // Handle wheel events on the entire panel
     panel.addEventListener('wheel', (e) => {
       e.stopPropagation();
+      
+      // If conversation container is scrollable, handle scroll there
+      if (conversationContainer) {
+        const { scrollTop, scrollHeight, clientHeight } = conversationContainer;
+        const isAtTop = scrollTop === 0;
+        const isAtBottom = scrollTop + clientHeight >= scrollHeight - 1;
+        
+        // Prevent default only when not at scroll boundaries, or always if content fits
+        if (scrollHeight <= clientHeight) {
+          e.preventDefault();
+        } else if ((e.deltaY < 0 && isAtTop) || (e.deltaY > 0 && isAtBottom)) {
+          e.preventDefault();
+        }
+      } else {
+        e.preventDefault();
+      }
     }, { passive: false });
 
     // Also prevent touchmove propagation for mobile
     panel.addEventListener('touchmove', (e) => {
       e.stopPropagation();
     }, { passive: false });
+    
+    // Prevent scroll on the panel body itself
+    panel.addEventListener('scroll', (e) => {
+      e.stopPropagation();
+    }, { passive: false });
 
     // Close button
     panel.querySelector('.tweetcraft-panel-close').addEventListener('click', () => {
       savePanelState();
+      removeGlobalScrollPrevention();
       panel.classList.remove('visible');
       setTimeout(() => {
         panel.remove();

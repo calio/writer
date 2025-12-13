@@ -457,6 +457,9 @@ html[style*="color-scheme: light"] .tweetcraft-inline-panel {
   overflow: hidden;
   /* Prevent scrolling from affecting parent page */
   overscroll-behavior: contain;
+  /* Fixed height to ensure conversation area scrolls */
+  height: auto;
+  max-height: 500px;
 }
 
 /* Header actions */
@@ -560,9 +563,9 @@ html[style*="color-scheme: light"] .tweetcraft-inline-panel {
 
 /* Conversation container */
 .tweetcraft-conversation {
-  flex: 1;
-  min-height: 200px;
-  max-height: 350px;
+  flex: 1 1 auto;
+  min-height: 150px;
+  max-height: 280px;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 12px;
@@ -571,6 +574,8 @@ html[style*="color-scheme: light"] .tweetcraft-inline-panel {
   gap: 12px;
   /* Prevent scroll from affecting parent */
   overscroll-behavior: contain;
+  /* Ensure it's scrollable */
+  position: relative;
 }
 
 /* Empty conversation state */

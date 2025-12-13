@@ -307,10 +307,27 @@
     state.currentTextarea = textarea;
     btn.classList.add('active');
     
-    // Extract context if this is a fresh conversation
-    if (state.conversation.length === 0) {
-      state.originalTweet = extractOriginalTweet(container);
-      state.originalImages = extractTweetImages(container);
+    // Always extract current tweet context to check if it changed
+    const currentTweet = extractOriginalTweet(container);
+    const currentImages = extractTweetImages(container);
+    
+    // Check if context has changed (user navigated to different tweet)
+    // Compare first 100 chars to handle minor differences
+    const storedContext = (state.originalTweet || '').substring(0, 100);
+    const newContext = (currentTweet || '').substring(0, 100);
+    
+    if (storedContext !== newContext) {
+      console.log('Writer: Tweet context changed, clearing conversation');
+      console.log('  Old:', storedContext);
+      console.log('  New:', newContext);
+      state.conversation = [];
+      state.originalTweet = currentTweet;
+      state.originalImages = currentImages;
+      savePanelState();
+    } else if (state.conversation.length === 0) {
+      // Fresh conversation, extract context
+      state.originalTweet = currentTweet;
+      state.originalImages = currentImages;
     }
     
     const panel = createSidePanel();
@@ -360,6 +377,11 @@
             ${state.originalImages.length > 0 ? `<span class="tweetcraft-vision-badge">📷 ${state.originalImages.length}</span>` : ''}
           </div>
           <div class="tweetcraft-header-actions">
+            <button class="tweetcraft-debug-btn" title="Log History (Debug)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 2h4m-2 2v20M4 7h16M4 17h16" />
+              </svg>
+            </button>
             <button class="tweetcraft-new-chat-btn" title="Start new conversation">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M12 5v14M5 12h14"/>
@@ -445,6 +467,17 @@
 
   // Setup side panel event listeners
   function setupSidePanelListeners(panel) {
+    // Debug button
+    panel.querySelector('.tweetcraft-debug-btn').addEventListener('click', () => {
+      console.log('--- Writer AI Debug Info ---');
+      console.log('Original Tweet:', state.originalTweet);
+      console.log('Conversation History:', JSON.parse(JSON.stringify(state.conversation)));
+      console.log('Tone:', state.tone);
+      console.log('Attached Images:', panel._attachedImages);
+      console.log('----------------------------');
+      alert('Debug info logged to console (F12)');
+    });
+
     // Stop wheel events from propagating to Twitter to prevent interference
     // But do NOT preventDefault, so native scrolling works
     panel.addEventListener('wheel', (e) => {
@@ -882,16 +915,48 @@
 
   // Extract original tweet text
   function extractOriginalTweet(container) {
-    const article = container?.closest('article') || document.querySelector('article[data-testid="tweet"]');
+    // On a tweet detail page (/status/...), find the main tweet
+    const isDetailPage = window.location.pathname.includes('/status/');
+    
+    if (isDetailPage) {
+      // On detail page, the main tweet is usually the first one with tweetText
+      // But we need to be careful - there might be quoted tweets or thread context
+      // The main tweet is usually in a specific container
+      const mainTweetCandidates = document.querySelectorAll('article[data-testid="tweet"]');
+      for (const article of mainTweetCandidates) {
+        // Skip if this looks like a reply (has "Replying to" text above it)
+        const cellInner = article.closest('[data-testid="cellInnerDiv"]');
+        if (cellInner) {
+          const prevSibling = cellInner.previousElementSibling;
+          // The main tweet on a detail page is usually the first meaningful article
+          const tweetText = article.querySelector('[data-testid="tweetText"]');
+          if (tweetText) {
+            console.log('Writer: Found tweet text on detail page:', tweetText.innerText.substring(0, 50));
+            return tweetText.innerText;
+          }
+        }
+      }
+    }
+    
+    // Try from container (when in a reply dialog or compose area)
+    const article = container?.closest('article');
     if (article) {
       const tweetText = article.querySelector('[data-testid="tweetText"]');
       if (tweetText) return tweetText.innerText;
     }
 
+    // Dialog case (reply modal)
     const dialog = container?.closest('[role="dialog"]');
     if (dialog) {
       const tweetText = dialog.querySelector('[data-testid="tweetText"]');
       if (tweetText) return tweetText.innerText;
+    }
+    
+    // Fallback: just get the first tweet text on the page
+    const fallbackTweet = document.querySelector('article[data-testid="tweet"] [data-testid="tweetText"]');
+    if (fallbackTweet) {
+      console.log('Writer: Using fallback tweet extraction');
+      return fallbackTweet.innerText;
     }
 
     return '';

@@ -90,7 +90,12 @@ ${documentContext ? `
 REFERENCE DOCUMENTS (use this knowledge to inform your replies):
 ${documentContext}
 ` : ''}
-TASK: ${isRefinement ? 'Refine and improve the previous reply options based on the user\'s feedback.' : `Generate ${numCandidates} different reply options for the following ${contentType}.`}
+
+TASK: ${isRefinement ? 'Refine the reply options based on the user\'s specific feedback.' : `Generate ${numCandidates} different reply options for the following ${contentType}.`}
+
+CRITICAL INSTRUCTION:
+${feedback ? `The user has provided specific instructions: "${feedback}"
+You MUST prioritize this instruction above all else. If the instruction asks for a specific topic (e.g., "write about birds"), make the reply about that topic, even if it diverges from the original post's main theme. The reply should still make sense as a response, but fully embrace the user's direction.` : 'Generate high-quality replies that add value to the conversation.'}
 
 ORIGINAL ${contentType.toUpperCase()} TO REPLY TO:
 "${originalTweet || `No specific ${contentType} provided - generate original content`}"
@@ -98,8 +103,7 @@ ${hasImages ? `\n[This ${contentType} also contains images/media which are provi
 
 TONE: ${toneDescriptions[tone] || toneDescriptions.match}
 ${context ? `\nUSER'S WRITING STYLE REFERENCE:${context}` : ''}
-${conversationContext ? `${conversationContext}` : ''}
-${feedback ? `\n${isRefinement ? 'REFINEMENT REQUEST' : 'ADDITIONAL INSTRUCTIONS'}: ${feedback}` : ''}
+${conversationContext ? `\nPREVIOUS CONVERSATION CONTEXT:\n${conversationContext}` : ''}
 
 REQUIREMENTS:
 ${isReddit ? `1. Replies can be longer - Reddit allows detailed responses (aim for 1-4 sentences unless the topic warrants more)
@@ -107,7 +111,7 @@ ${isReddit ? `1. Replies can be longer - Reddit allows detailed responses (aim f
 2. Make replies concise and punchy`}
 3. Make replies feel natural and human - avoid obvious AI patterns
 4. Each reply should be notably different from the others
-5. Match the energy and context of the original ${contentType}
+5. Match the energy and context of the original ${contentType} (unless the user's instruction directs otherwise)
 6. Be engaging and encourage conversation when appropriate
 ${userProfile ? `7. CRITICAL: Stay true to the user's persona/profile described above` : ''}
 ${isRefinement ? `${userProfile ? '8' : '7'}. IMPORTANT: Incorporate the user's feedback/refinement request while maintaining quality` : ''}
@@ -204,7 +208,7 @@ async function callOpenAIAPI(apiKey, model, prompt, numCandidates, imageUrls = [
     messages: [
       {
         role: 'system',
-        content: 'You are a helpful assistant that generates Twitter/X replies. Follow the user\'s instructions exactly and return only the numbered replies.'
+        content: 'You are a social media writing expert. Your PRIMARY goal is to follow the user\'s specific instructions for the reply. If the user provides a topic or direction, prioritize that over the original post\'s context while still making it a coherent reply.'
       },
       {
         role: 'user',

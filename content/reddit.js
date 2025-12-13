@@ -447,9 +447,24 @@
     state.currentTextarea = textarea;
     btn.classList.add('active');
     
-    // Extract context if this is a fresh conversation
-    if (state.conversation.length === 0) {
-      state.originalPost = extractOriginalPost(container);
+    // Always extract current post context to check if it changed
+    const currentPost = extractOriginalPost(container);
+    
+    // Check if context has changed (user navigated to different post)
+    // Compare first 100 chars to handle minor differences
+    const storedContext = (state.originalPost || '').substring(0, 100);
+    const newContext = (currentPost || '').substring(0, 100);
+    
+    if (storedContext !== newContext) {
+      console.log('Writer Reddit: Post context changed, clearing conversation');
+      console.log('  Old:', storedContext);
+      console.log('  New:', newContext);
+      state.conversation = [];
+      state.originalPost = currentPost;
+      savePanelState();
+    } else if (state.conversation.length === 0) {
+      // Fresh conversation, extract context
+      state.originalPost = currentPost;
     }
     
     const panel = createSidePanel();
@@ -499,6 +514,11 @@
           <span class="tweetcraft-platform-badge">Reddit</span>
         </div>
           <div class="tweetcraft-header-actions">
+            <button class="tweetcraft-debug-btn" title="Log History (Debug)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 2h4m-2 2v20M4 7h16M4 17h16" />
+              </svg>
+            </button>
             <button class="tweetcraft-new-chat-btn" title="Start new conversation">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M12 5v14M5 12h14"/>
@@ -582,6 +602,17 @@
 
 // Setup side panel event listeners
   function setupSidePanelListeners(panel) {
+    // Debug button
+    panel.querySelector('.tweetcraft-debug-btn').addEventListener('click', () => {
+      console.log('--- Writer AI Debug Info ---');
+      console.log('Original Post:', state.originalPost);
+      console.log('Conversation History:', JSON.parse(JSON.stringify(state.conversation)));
+      console.log('Tone:', state.tone);
+      console.log('Attached Images:', panel._attachedImages);
+      console.log('----------------------------');
+      alert('Debug info logged to console (F12)');
+    });
+
     // Stop wheel events from propagating to Reddit to prevent interference
     // But do NOT preventDefault, so native scrolling works
     panel.addEventListener('wheel', (e) => {

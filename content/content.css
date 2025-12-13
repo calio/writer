@@ -610,7 +610,8 @@ html[style*="color-scheme: light"] .tweetcraft-inline-panel {
   gap: 4px;
 }
 
-.tweetcraft-new-chat-btn {
+.tweetcraft-new-chat-btn,
+.tweetcraft-debug-btn {
   width: 28px;
   height: 28px;
   border: none;
@@ -624,12 +625,14 @@ html[style*="color-scheme: light"] .tweetcraft-inline-panel {
   transition: all 0.15s;
 }
 
-.tweetcraft-new-chat-btn:hover {
+.tweetcraft-new-chat-btn:hover,
+.tweetcraft-debug-btn:hover {
   background: var(--tc-bg-hover);
   color: var(--tc-accent);
 }
 
-.tweetcraft-new-chat-btn svg {
+.tweetcraft-new-chat-btn svg,
+.tweetcraft-debug-btn svg {
   width: 16px;
   height: 16px;
 }

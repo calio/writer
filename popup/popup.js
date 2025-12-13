@@ -217,9 +217,13 @@ async function extractFileContent(file) {
 // Extract text from PDF using pdf.js
 async function extractPdfContent(file) {
   try {
-    // Load pdf.js dynamically
+    // Initialize pdf.js worker path
+    if (window.pdfjsLib && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL('lib/pdf.worker.min.js');
+    }
+
     if (!window.pdfjsLib) {
-      await loadPdfJs();
+      throw new Error('PDF.js library not loaded');
     }
 
     const arrayBuffer = await file.arrayBuffer();
@@ -243,25 +247,6 @@ async function extractPdfContent(file) {
       throw new Error('Could not extract text from PDF');
     }
   }
-}
-
-// Load pdf.js library
-function loadPdfJs() {
-  return new Promise((resolve, reject) => {
-    if (window.pdfjsLib) {
-      resolve();
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-    script.onload = () => {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      resolve();
-    };
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
 }
 
 // Render uploaded files

@@ -104,7 +104,7 @@
     console.log('Writer: Initializing...');
     
     document.querySelectorAll('.tweetcraft-btn-wrapper').forEach(el => el.remove());
-    document.querySelectorAll('.tweetcraft-inline-panel').forEach(el => el.remove());
+    document.querySelectorAll('.tweetcraft-side-panel').forEach(el => el.remove());
     
     loadPanelState();
     setupGlobalClickHandler();
@@ -136,7 +136,6 @@
     state.originalImages = [];
     
     if (state.currentPanel) {
-      removeGlobalScrollPrevention();
       state.currentPanel.remove();
       state.currentPanel = null;
       document.querySelectorAll('.tweetcraft-btn.active').forEach(b => b.classList.remove('active'));
@@ -293,40 +292,14 @@
     return wrapper;
   }
 
-  // Global wheel handler to prevent background scroll when panel is open
-  let globalWheelHandler = null;
-  
-  function setupGlobalScrollPrevention(panel) {
-    globalWheelHandler = (e) => {
-      // Check if the event target is inside the panel
-      if (panel && panel.contains(e.target)) {
-        // Let the panel handle its own scrolling
-        e.stopPropagation();
-      } else if (panel) {
-        // Prevent scrolling outside the panel
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    };
-    
-    document.addEventListener('wheel', globalWheelHandler, { passive: false, capture: true });
-  }
-  
-  function removeGlobalScrollPrevention() {
-    if (globalWheelHandler) {
-      document.removeEventListener('wheel', globalWheelHandler, { capture: true });
-      globalWheelHandler = null;
-    }
-  }
+  // No scroll prevention needed with side panel approach
 
-  // Toggle inline panel
+  // Toggle side panel
   function toggleInlinePanel(textarea, container, btn) {
-    const existingPanel = document.querySelector('.tweetcraft-inline-panel');
+    const existingPanel = document.querySelector('.tweetcraft-side-panel');
     if (existingPanel) {
       savePanelState();
-      removeGlobalScrollPrevention();
-      existingPanel.remove();
-      state.currentPanel = null;
+      closeSidePanel(existingPanel);
       document.querySelectorAll('.tweetcraft-btn.active, .tweetcraft-btn-wrapper .tweetcraft-btn.active').forEach(b => b.classList.remove('active'));
       return;
     }
@@ -340,197 +313,154 @@
       state.originalImages = extractTweetImages(container);
     }
     
-    const panel = createConversationalPanel();
+    const panel = createSidePanel();
     state.currentPanel = panel;
 
-    const wrapper = btn.closest('.tweetcraft-btn-wrapper') || btn;
-    const rect = wrapper.getBoundingClientRect();
-    const panelWidth = 480;
-    const viewportWidth = window.innerWidth;
-    let leftPos = rect.left + (rect.width / 2) - (panelWidth / 2);
-    leftPos = Math.max(10, Math.min(leftPos, viewportWidth - panelWidth - 10));
-    
-    panel.style.position = 'fixed';
-    panel.style.left = `${leftPos}px`;
-    panel.style.top = `${Math.min(rect.bottom + 10, window.innerHeight - 500)}px`;
-    panel.style.width = `${panelWidth}px`;
-    panel.style.maxWidth = 'calc(100vw - 20px)';
-    panel.style.maxHeight = 'calc(100vh - 100px)';
-    panel.style.zIndex = '10000';
-    panel.style.boxShadow = '0 8px 32px rgba(0,0,0,0.3)';
-    
     document.body.appendChild(panel);
-    console.log('Writer: Panel added to body as fixed overlay');
-    
-    // Setup global scroll prevention
-    setupGlobalScrollPrevention(panel);
+    console.log('Writer: Side panel added');
 
-    requestAnimationFrame(() => panel.classList.add('visible'));
+    // Trigger animation
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        panel.classList.add('visible');
+      });
+    });
     
     // Auto-generate if fresh conversation
     if (state.conversation.length === 0) {
       setTimeout(() => sendMessage(panel, 'Generate reply options'), 300);
     }
-    
-    // Close when clicking outside
-    const closeOnClickOutside = (e) => {
-      if (!panel.contains(e.target) && !btn.contains(e.target) && !wrapper.contains(e.target)) {
-        savePanelState();
-        removeGlobalScrollPrevention();
-        panel.classList.remove('visible');
-        setTimeout(() => {
-          panel.remove();
-          state.currentPanel = null;
-          btn.classList.remove('active');
-        }, 200);
-        document.removeEventListener('click', closeOnClickOutside);
-      }
-    };
-    setTimeout(() => document.addEventListener('click', closeOnClickOutside), 100);
+  }
+  
+  // Close side panel with animation
+  function closeSidePanel(panel) {
+    panel.classList.remove('visible');
+    setTimeout(() => {
+      panel.remove();
+      state.currentPanel = null;
+    }, 300);
   }
 
-  // Create conversational panel
-  function createConversationalPanel() {
+  // Create side panel
+  function createSidePanel() {
     const savedTone = state.tone || 'match';
 
     const panel = document.createElement('div');
-    panel.className = 'tweetcraft-inline-panel tweetcraft-conversational';
+    panel.className = 'tweetcraft-side-panel';
     panel.innerHTML = `
-      <div class="tweetcraft-panel-header">
-        <div class="tweetcraft-panel-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2L2 7L12 12L22 7L12 2Z"/>
-            <path d="M2 17L12 22L22 17"/>
-            <path d="M2 12L12 17L22 12"/>
-          </svg>
-          <span>Writer AI</span>
-          ${state.originalImages.length > 0 ? `<span class="tweetcraft-vision-badge">📷 ${state.originalImages.length}</span>` : ''}
-        </div>
-        <div class="tweetcraft-header-actions">
-          <button class="tweetcraft-new-chat-btn" title="Start new conversation">
+      <div class="tweetcraft-side-panel-inner">
+        <div class="tweetcraft-panel-header">
+          <div class="tweetcraft-panel-title">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 5v14M5 12h14"/>
+              <path d="M12 2L2 7L12 12L22 7L12 2Z"/>
+              <path d="M2 17L12 22L22 17"/>
+              <path d="M2 12L12 17L22 12"/>
             </svg>
-          </button>
-          <button class="tweetcraft-panel-close" title="Close">×</button>
-        </div>
-      </div>
-      
-      <div class="tweetcraft-tone-row">
-        <button class="tweetcraft-tone-chip ${savedTone === 'match' ? 'active' : ''}" data-tone="match">Match Style</button>
-        <button class="tweetcraft-tone-chip ${savedTone === 'professional' ? 'active' : ''}" data-tone="professional">Pro</button>
-        <button class="tweetcraft-tone-chip ${savedTone === 'casual' ? 'active' : ''}" data-tone="casual">Casual</button>
-        <button class="tweetcraft-tone-chip ${savedTone === 'witty' ? 'active' : ''}" data-tone="witty">Witty</button>
-        <button class="tweetcraft-tone-chip ${savedTone === 'thoughtful' ? 'active' : ''}" data-tone="thoughtful">Deep</button>
-      </div>
-
-      ${state.originalTweet ? `
-        <div class="tweetcraft-context-preview" data-expanded="false">
-          <div class="tweetcraft-context-header">
-            <div class="tweetcraft-context-label">Replying to:</div>
-            <button class="tweetcraft-context-toggle" title="Show full tweet">
-              <svg class="expand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="6,9 12,15 18,9"/>
-              </svg>
-            </button>
+            <span>Writer AI</span>
+            ${state.originalImages.length > 0 ? `<span class="tweetcraft-vision-badge">📷 ${state.originalImages.length}</span>` : ''}
           </div>
-          <div class="tweetcraft-context-text">${escapeHtml(state.originalTweet)}</div>
-        </div>
-      ` : ''}
-
-      <div class="tweetcraft-conversation" id="tweetcraft-conversation">
-        <!-- Conversation messages will be rendered here -->
-      </div>
-
-      <div class="tweetcraft-input-area">
-        <div class="tweetcraft-action-row">
-          <button class="tweetcraft-regenerate-btn" title="Regenerate with current style">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/>
-            </svg>
-            Regenerate
-          </button>
-        </div>
-        <div class="tweetcraft-input-row">
-          <div class="tweetcraft-input-wrapper">
-            <input type="text" class="tweetcraft-chat-input" placeholder="Refine: e.g., make it shorter, add humor, be more direct..." />
-            <input type="file" class="tweetcraft-image-input" accept="image/*" multiple hidden />
-            <button class="tweetcraft-attach-btn" title="Attach images">
+          <div class="tweetcraft-header-actions">
+            <button class="tweetcraft-new-chat-btn" title="Start new conversation">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                <circle cx="8.5" cy="8.5" r="1.5"/>
-                <polyline points="21,15 16,10 5,21"/>
+                <path d="M12 5v14M5 12h14"/>
+              </svg>
+            </button>
+            <button class="tweetcraft-panel-close" title="Close panel">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 6L6 18M6 6l12 12"/>
               </svg>
             </button>
           </div>
-          <button class="tweetcraft-send-btn" title="Send refinement">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="22" y1="2" x2="11" y2="13"/>
-              <polygon points="22,2 15,22 11,13 2,9 22,2"/>
-            </svg>
-          </button>
         </div>
-        <div class="tweetcraft-attached-images" id="tweetcraft-attached-images"></div>
+        
+        <div class="tweetcraft-tone-row">
+          <button class="tweetcraft-tone-chip ${savedTone === 'match' ? 'active' : ''}" data-tone="match">Match Style</button>
+          <button class="tweetcraft-tone-chip ${savedTone === 'professional' ? 'active' : ''}" data-tone="professional">Pro</button>
+          <button class="tweetcraft-tone-chip ${savedTone === 'casual' ? 'active' : ''}" data-tone="casual">Casual</button>
+          <button class="tweetcraft-tone-chip ${savedTone === 'witty' ? 'active' : ''}" data-tone="witty">Witty</button>
+          <button class="tweetcraft-tone-chip ${savedTone === 'thoughtful' ? 'active' : ''}" data-tone="thoughtful">Deep</button>
+        </div>
+
+        ${state.originalTweet ? `
+          <div class="tweetcraft-context-preview" data-expanded="false">
+            <div class="tweetcraft-context-header">
+              <div class="tweetcraft-context-label">Replying to:</div>
+              <button class="tweetcraft-context-toggle" title="Show full tweet">
+                <svg class="expand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="6,9 12,15 18,9"/>
+                </svg>
+              </button>
+            </div>
+            <div class="tweetcraft-context-text">${escapeHtml(state.originalTweet)}</div>
+          </div>
+        ` : ''}
+
+        <div class="tweetcraft-conversation" id="tweetcraft-conversation">
+          <!-- Conversation messages will be rendered here -->
+        </div>
+
+        <div class="tweetcraft-input-area">
+          <div class="tweetcraft-action-row">
+            <button class="tweetcraft-regenerate-btn" title="Regenerate with current style">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/>
+              </svg>
+              Regenerate
+            </button>
+          </div>
+          <div class="tweetcraft-input-row">
+            <div class="tweetcraft-input-wrapper">
+              <input type="text" class="tweetcraft-chat-input" placeholder="Refine: make it shorter, add humor..." />
+              <input type="file" class="tweetcraft-image-input" accept="image/*" multiple hidden />
+              <button class="tweetcraft-attach-btn" title="Attach images">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <polyline points="21,15 16,10 5,21"/>
+                </svg>
+              </button>
+            </div>
+            <button class="tweetcraft-send-btn" title="Send refinement">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22,2 15,22 11,13 2,9 22,2"/>
+              </svg>
+            </button>
+          </div>
+          <div class="tweetcraft-attached-images" id="tweetcraft-attached-images"></div>
+        </div>
       </div>
     `;
 
     panel.dataset.tone = savedTone;
-    
+
     // Store attached images for current message
     panel._attachedImages = [];
     
-    setupConversationalPanelListeners(panel);
+    setupSidePanelListeners(panel);
     renderConversation(panel);
 
     return panel;
   }
 
-  // Setup conversational panel event listeners
-  function setupConversationalPanelListeners(panel) {
-    // Prevent scroll events from propagating to the page
-    const conversationContainer = panel.querySelector('#tweetcraft-conversation');
-    
-    // Handle wheel events on the entire panel
+  // Setup side panel event listeners
+  function setupSidePanelListeners(panel) {
+    // Stop wheel events from propagating to Twitter to prevent interference
+    // But do NOT preventDefault, so native scrolling works
     panel.addEventListener('wheel', (e) => {
       e.stopPropagation();
-      
-      // If conversation container is scrollable, handle scroll there
-      if (conversationContainer) {
-        const { scrollTop, scrollHeight, clientHeight } = conversationContainer;
-        const isAtTop = scrollTop === 0;
-        const isAtBottom = scrollTop + clientHeight >= scrollHeight - 1;
-        
-        // Prevent default only when not at scroll boundaries, or always if content fits
-        if (scrollHeight <= clientHeight) {
-          e.preventDefault();
-        } else if ((e.deltaY < 0 && isAtTop) || (e.deltaY > 0 && isAtBottom)) {
-          e.preventDefault();
-        }
-      } else {
-        e.preventDefault();
-      }
-    }, { passive: false });
+    }, { passive: true });
 
-    // Also prevent touchmove propagation for mobile
+    // Also stop touch events for mobile/trackpad
     panel.addEventListener('touchmove', (e) => {
       e.stopPropagation();
-    }, { passive: false });
-    
-    // Prevent scroll on the panel body itself
-    panel.addEventListener('scroll', (e) => {
-      e.stopPropagation();
-    }, { passive: false });
+    }, { passive: true });
 
     // Close button
     panel.querySelector('.tweetcraft-panel-close').addEventListener('click', () => {
       savePanelState();
-      removeGlobalScrollPrevention();
-      panel.classList.remove('visible');
-      setTimeout(() => {
-        panel.remove();
-        state.currentPanel = null;
-        document.querySelectorAll('.tweetcraft-btn.active').forEach(b => b.classList.remove('active'));
-      }, 200);
+      closeSidePanel(panel);
+      document.querySelectorAll('.tweetcraft-btn.active').forEach(b => b.classList.remove('active'));
     });
 
     // Context toggle button (expand/collapse original tweet)
@@ -830,7 +760,7 @@
       showContextInvalidatedError(conversationContainer);
       return;
     }
-
+    
     // Get attached images if not editing
     const attachedImages = isEdit ? images : [...(panel._attachedImages || [])];
     

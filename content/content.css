@@ -447,17 +447,158 @@ html[style*="color-scheme: light"] .tweetcraft-inline-panel {
 }
 
 /* ============================================
+   SIDE PANEL STYLES
+   ============================================ */
+
+/* Side panel - slides in from the right */
+.tweetcraft-side-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 400px;
+  max-width: 90vw;
+  height: 100vh;
+  height: 100dvh; /* Dynamic viewport height for mobile */
+  z-index: 999999;
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden; /* Prevent any overflow from the panel itself */
+  /* CSS Variables */
+  --tc-bg: #16181c;
+  --tc-bg-secondary: #1d1f23;
+  --tc-bg-hover: #2c2f33;
+  --tc-border: #2f3336;
+  --tc-text: #e7e9ea;
+  --tc-text-secondary: #71767b;
+  --tc-accent: #6366f1;
+  --tc-accent-hover: #818cf8;
+  --tc-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  --tc-success: #00ba7c;
+  --tc-error: #f4212e;
+  --tc-user-bg: rgba(99, 102, 241, 0.1);
+  --tc-assistant-bg: rgba(139, 92, 246, 0.05);
+}
+
+.tweetcraft-side-panel.visible {
+  transform: translateX(0);
+}
+
+.tweetcraft-side-panel-inner {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--tc-bg);
+  border-left: 1px solid var(--tc-border);
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+  overflow: hidden; /* Children should not overflow */
+  box-sizing: border-box;
+}
+
+/* Ensure all side panel children use border-box */
+.tweetcraft-side-panel *,
+.tweetcraft-side-panel *::before,
+.tweetcraft-side-panel *::after {
+  box-sizing: border-box;
+}
+
+/* Light theme for side panel */
+@media (prefers-color-scheme: light) {
+  .tweetcraft-side-panel {
+    --tc-bg: #ffffff;
+    --tc-bg-secondary: #f7f9f9;
+    --tc-bg-hover: #eff3f4;
+    --tc-border: #cfd9de;
+    --tc-text: #0f1419;
+    --tc-text-secondary: #536471;
+  }
+  
+  .tweetcraft-side-panel-inner {
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
+  }
+}
+
+/* Conversation container in side panel - takes remaining height and scrolls */
+.tweetcraft-side-panel .tweetcraft-conversation {
+  flex: 1 1 0; /* Allow both grow and shrink, start at 0 */
+  min-height: 0 !important; /* Critical for flexbox scrolling */
+  max-height: none !important; /* Override the 280px from general styles */
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Scrollbar styling */
+  scrollbar-width: thin;
+  scrollbar-color: var(--tc-border) transparent;
+}
+
+/* Side panel header adjustments */
+.tweetcraft-side-panel .tweetcraft-panel-header {
+  flex-shrink: 0;
+  padding: 16px;
+  border-bottom: 1px solid var(--tc-border);
+  background: var(--tc-bg-secondary);
+}
+
+.tweetcraft-side-panel .tweetcraft-panel-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--tc-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.tweetcraft-side-panel .tweetcraft-panel-close:hover {
+  background: var(--tc-bg-hover);
+  color: var(--tc-text);
+}
+
+.tweetcraft-side-panel .tweetcraft-panel-close svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Tone row in side panel */
+.tweetcraft-side-panel .tweetcraft-tone-row {
+  flex-shrink: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--tc-border);
+}
+
+/* Context preview in side panel */
+.tweetcraft-side-panel .tweetcraft-context-preview {
+  flex-shrink: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--tc-border);
+}
+
+/* Input area in side panel */
+.tweetcraft-side-panel .tweetcraft-input-area {
+  flex-shrink: 0;
+  padding: 16px;
+  background: var(--tc-bg-secondary);
+  border-top: 1px solid var(--tc-border);
+}
+
+/* ============================================
    CONVERSATIONAL INTERFACE STYLES
    ============================================ */
 
-/* Conversational panel modifications */
+/* Conversational panel modifications (legacy - kept for compatibility) */
 .tweetcraft-conversational {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* Prevent scrolling from affecting parent page */
   overscroll-behavior: contain;
-  /* Fixed height to ensure conversation area scrolls */
   height: auto;
   max-height: 500px;
 }
@@ -572,10 +713,6 @@ html[style*="color-scheme: light"] .tweetcraft-inline-panel {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  /* Prevent scroll from affecting parent */
-  overscroll-behavior: contain;
-  /* Ensure it's scrollable */
-  position: relative;
 }
 
 /* Empty conversation state */
@@ -612,6 +749,7 @@ html[style*="color-scheme: light"] .tweetcraft-inline-panel {
 .tweetcraft-message {
   border-radius: 12px;
   overflow: hidden;
+  flex-shrink: 0; /* Don't shrink messages - let container scroll */
 }
 
 .tweetcraft-user-message {
@@ -1000,4 +1138,32 @@ html[style*="color-scheme: light"] .tweetcraft-inline-panel {
 
 .tweetcraft-conversation::-webkit-scrollbar-thumb:hover {
   background: var(--tc-text-secondary);
+}
+
+/* ============================================
+   SIDE PANEL OVERRIDES (must be at end for specificity)
+   ============================================ */
+
+/* Override conversation container for side panel - MUST be after general styles */
+.tweetcraft-side-panel .tweetcraft-conversation {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  height: auto !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain; /* Isolate scroll chaining */
+  pointer-events: auto;
+  touch-action: pan-y; /* Optimize for touch scrolling */
+}
+
+/* Ensure messages don't shrink in side panel */
+.tweetcraft-side-panel .tweetcraft-message {
+  flex-shrink: 0 !important;
+}
+
+/* Ensure empty state fills the space */
+.tweetcraft-side-panel .tweetcraft-empty-conversation {
+  flex: 1;
+  min-height: 200px;
 }

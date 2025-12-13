@@ -11,6 +11,15 @@ const saveBtn = document.getElementById('saveBtn');
 const statusBar = document.getElementById('statusBar');
 const statusText = document.getElementById('statusText');
 
+// Profile Elements
+const userProfileTextarea = document.getElementById('userProfile');
+const pdfUploadInput = document.getElementById('pdfUpload');
+const fileUploadArea = document.getElementById('fileUploadArea');
+const uploadedFilesContainer = document.getElementById('uploadedFiles');
+
+// Store uploaded documents
+let uploadedDocuments = [];
+
 // Model options by provider
 const modelOptions = {
   anthropic: [
@@ -39,7 +48,9 @@ async function loadSettings() {
       'model',
       'candidates',
       'tone',
-      'useHistory'
+      'useHistory',
+      'userProfile',
+      'uploadedDocuments'
     ]);
 
     if (settings.provider) {
@@ -61,6 +72,13 @@ async function loadSettings() {
     }
     if (settings.useHistory !== undefined) {
       useHistoryCheckbox.checked = settings.useHistory;
+    }
+    if (settings.userProfile) {
+      userProfileTextarea.value = settings.userProfile;
+    }
+    if (settings.uploadedDocuments) {
+      uploadedDocuments = settings.uploadedDocuments;
+      renderUploadedFiles();
     }
 
     updateStatus('success', 'Settings loaded');
@@ -98,6 +116,209 @@ function setupEventListeners() {
 
   // Save button
   saveBtn.addEventListener('click', saveSettings);
+
+  // File upload handling
+  setupFileUpload();
+}
+
+// Setup file upload functionality
+function setupFileUpload() {
+  // Click to upload
+  fileUploadArea.addEventListener('click', () => {
+    pdfUploadInput.click();
+  });
+
+  // Drag and drop
+  fileUploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    fileUploadArea.classList.add('drag-over');
+  });
+
+  fileUploadArea.addEventListener('dragleave', () => {
+    fileUploadArea.classList.remove('drag-over');
+  });
+
+  fileUploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    fileUploadArea.classList.remove('drag-over');
+    const files = Array.from(e.dataTransfer.files);
+    handleFileUpload(files);
+  });
+
+  // File input change
+  pdfUploadInput.addEventListener('change', (e) => {
+    const files = Array.from(e.target.files);
+    handleFileUpload(files);
+    pdfUploadInput.value = ''; // Reset for re-upload
+  });
+}
+
+// Handle file upload
+async function handleFileUpload(files) {
+  const validFiles = files.filter(f => 
+    f.type === 'application/pdf' || 
+    f.type === 'text/plain' || 
+    f.type === 'text/markdown' ||
+    f.name.endsWith('.md') ||
+    f.name.endsWith('.txt') ||
+    f.name.endsWith('.pdf')
+  );
+
+  if (validFiles.length === 0) {
+    updateStatus('error', 'Please upload PDF, TXT, or MD files');
+    return;
+  }
+
+  updateStatus('warning', 'Processing files...');
+
+  for (const file of validFiles) {
+    try {
+      const content = await extractFileContent(file);
+      if (content) {
+        // Check if file already exists
+        const existingIndex = uploadedDocuments.findIndex(d => d.name === file.name);
+        if (existingIndex !== -1) {
+          uploadedDocuments[existingIndex] = {
+            name: file.name,
+            content: content,
+            size: file.size,
+            uploadedAt: Date.now()
+          };
+        } else {
+          uploadedDocuments.push({
+            name: file.name,
+            content: content,
+            size: file.size,
+            uploadedAt: Date.now()
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error processing file:', file.name, error);
+      updateStatus('error', `Failed to process ${file.name}`);
+    }
+  }
+
+  renderUploadedFiles();
+  await saveDocuments();
+  updateStatus('success', `${validFiles.length} file(s) uploaded`);
+}
+
+// Extract content from file
+async function extractFileContent(file) {
+  if (file.type === 'text/plain' || file.type === 'text/markdown' || file.name.endsWith('.md') || file.name.endsWith('.txt')) {
+    return await file.text();
+  } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+    return await extractPdfContent(file);
+  }
+  return null;
+}
+
+// Extract text from PDF using pdf.js
+async function extractPdfContent(file) {
+  try {
+    // Load pdf.js dynamically
+    if (!window.pdfjsLib) {
+      await loadPdfJs();
+    }
+
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    
+    let fullText = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+      fullText += pageText + '\n\n';
+    }
+    
+    return fullText.trim();
+  } catch (error) {
+    console.error('PDF extraction error:', error);
+    // Fallback: try to read as text
+    try {
+      return await file.text();
+    } catch {
+      throw new Error('Could not extract text from PDF');
+    }
+  }
+}
+
+// Load pdf.js library
+function loadPdfJs() {
+  return new Promise((resolve, reject) => {
+    if (window.pdfjsLib) {
+      resolve();
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    script.onload = () => {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      resolve();
+    };
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+// Render uploaded files
+function renderUploadedFiles() {
+  if (uploadedDocuments.length === 0) {
+    uploadedFilesContainer.innerHTML = '';
+    return;
+  }
+
+  uploadedFilesContainer.innerHTML = uploadedDocuments.map((doc, index) => `
+    <div class="uploaded-file" data-index="${index}">
+      <div class="file-info">
+        <svg class="file-icon" viewBox="0 0 24 24" fill="none">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline points="14,2 14,8 20,8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="file-name">${escapeHtml(doc.name)}</span>
+        <span class="file-size">${formatFileSize(doc.size)}</span>
+      </div>
+      <button class="file-remove" data-index="${index}" title="Remove file">×</button>
+    </div>
+  `).join('');
+
+  // Add remove listeners
+  uploadedFilesContainer.querySelectorAll('.file-remove').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const index = parseInt(btn.dataset.index);
+      uploadedDocuments.splice(index, 1);
+      renderUploadedFiles();
+      await saveDocuments();
+      updateStatus('success', 'File removed');
+    });
+  });
+}
+
+// Save documents to storage
+async function saveDocuments() {
+  try {
+    await chrome.storage.local.set({ uploadedDocuments });
+  } catch (error) {
+    console.error('Failed to save documents:', error);
+  }
+}
+
+// Format file size
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// Escape HTML
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 function updateModelOptions(provider) {
@@ -119,6 +340,7 @@ async function saveSettings() {
   const candidates = parseInt(candidatesRange.value);
   const tone = toneSelect.value;
   const useHistory = useHistoryCheckbox.checked;
+  const userProfile = userProfileTextarea.value.trim();
 
   if (!apiKey) {
     updateStatus('error', 'Please enter an API key');
@@ -140,7 +362,8 @@ async function saveSettings() {
       model,
       candidates,
       tone,
-      useHistory
+      useHistory,
+      userProfile
     });
 
     updateStatus('success', 'Settings saved successfully!');

@@ -15,8 +15,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleGenerateReplies(payload) {
   const { originalTweet, tone, context, feedback, numCandidates, imageUrls = [], platform = 'twitter' } = payload;
   
-  // Get settings
-  const settings = await chrome.storage.local.get(['provider', 'apiKey', 'model']);
+  // Get settings including user profile and documents
+  const settings = await chrome.storage.local.get(['provider', 'apiKey', 'model', 'userProfile', 'uploadedDocuments']);
   
   if (!settings.apiKey) {
     throw new Error('API key not configured. Please set it in the extension settings.');
@@ -25,8 +25,31 @@ async function handleGenerateReplies(payload) {
   const provider = settings.provider || 'anthropic';
   const model = settings.model || (provider === 'anthropic' ? 'claude-sonnet-4-5-20241022' : 'gpt-5.2-2025-12-11');
 
-  // Build the prompt based on platform
-  const prompt = buildPrompt(originalTweet, tone, context, feedback, numCandidates, imageUrls.length > 0, platform);
+  // Build user profile context
+  const userProfileContext = settings.userProfile ? settings.userProfile : '';
+  
+  // Build document context (limit to prevent token overflow)
+  let documentContext = '';
+  if (settings.uploadedDocuments && settings.uploadedDocuments.length > 0) {
+    const maxDocChars = 8000; // Limit document context
+    let totalChars = 0;
+    const docSnippets = [];
+    
+    for (const doc of settings.uploadedDocuments) {
+      if (totalChars >= maxDocChars) break;
+      const remaining = maxDocChars - totalChars;
+      const snippet = doc.content.substring(0, remaining);
+      docSnippets.push(`[From ${doc.name}]:\n${snippet}`);
+      totalChars += snippet.length;
+    }
+    
+    if (docSnippets.length > 0) {
+      documentContext = docSnippets.join('\n\n---\n\n');
+    }
+  }
+
+  // Build the prompt based on platform with profile and documents
+  const prompt = buildPrompt(originalTweet, tone, context, feedback, numCandidates, imageUrls.length > 0, platform, userProfileContext, documentContext);
 
   // Call the appropriate API
   let candidates;
@@ -40,9 +63,9 @@ async function handleGenerateReplies(payload) {
 }
 
 // Build the prompt for reply generation
-function buildPrompt(originalTweet, tone, context, feedback, numCandidates, hasImages = false, platform = 'twitter') {
+function buildPrompt(originalTweet, tone, context, feedback, numCandidates, hasImages = false, platform = 'twitter', userProfile = '', documentContext = '') {
   const toneDescriptions = {
-    match: 'Match the style and voice of the user\'s previous posts',
+    match: 'Match the style and voice based on the user\'s profile description',
     professional: 'Professional, polished, and business-appropriate',
     casual: 'Casual, friendly, and conversational',
     witty: 'Witty, clever, and humorous (but not trying too hard)',
@@ -54,7 +77,16 @@ function buildPrompt(originalTweet, tone, context, feedback, numCandidates, hasI
   const contentType = isReddit ? 'post/comment' : 'tweet';
   
   let prompt = `You are a social media writing assistant helping compose ${platformName} replies.
+${userProfile ? `
+USER PROFILE/PERSONA:
+${userProfile}
 
+IMPORTANT: Write all replies as if you ARE this person. Embody their voice, perspective, expertise, and communication style.
+` : ''}
+${documentContext ? `
+REFERENCE DOCUMENTS (use this knowledge to inform your replies):
+${documentContext}
+` : ''}
 TASK: Generate ${numCandidates} different reply options for the following ${contentType}.
 
 ORIGINAL ${contentType.toUpperCase()} TO REPLY TO:
@@ -73,11 +105,13 @@ ${isReddit ? `1. Replies can be longer - Reddit allows detailed responses (aim f
 4. Each reply should be notably different from the others
 5. Match the energy and context of the original ${contentType}
 6. Be engaging and encourage conversation when appropriate
-${isReddit ? `7. Reddit appreciates wit and clever responses - feel free to be creative
-8. Use appropriate formatting for Reddit if helpful (but keep it simple)` : `7. Avoid generic phrases like "Great point!" or "Couldn't agree more!"
-8. Don't use hashtags unless specifically relevant
-9. Don't use emojis unless the tone calls for it`}
-${hasImages ? `${isReddit ? '9' : '10'}. Reference or react to the visual content if relevant` : ''}
+${userProfile ? `7. CRITICAL: Stay true to the user's persona/profile described above` : ''}
+${isReddit ? `${userProfile ? '8' : '7'}. Reddit appreciates wit and clever responses - feel free to be creative
+${userProfile ? '9' : '8'}. Use appropriate formatting for Reddit if helpful (but keep it simple)` : `${userProfile ? '8' : '7'}. Avoid generic phrases like "Great point!" or "Couldn't agree more!"
+${userProfile ? '9' : '8'}. Don't use hashtags unless specifically relevant
+${userProfile ? '10' : '9'}. Don't use emojis unless the tone calls for it`}
+${hasImages ? `${isReddit ? (userProfile ? '10' : '9') : (userProfile ? '11' : '10')}. Reference or react to the visual content if relevant` : ''}
+${documentContext ? `\nNOTE: If relevant to the topic, you may draw on knowledge from the reference documents provided.` : ''}
 
 OUTPUT FORMAT:
 Return ONLY the replies, one per line, numbered 1-${numCandidates}.

@@ -16,7 +16,9 @@
     tone: 'match',
     feedback: '',
     lastCandidates: [],
-    contextInvalidated: false
+    contextInvalidated: false,
+    // URL tracking for context clearing
+    lastUrl: window.location.href
   };
 
   // Check if extension context is still valid
@@ -104,8 +106,51 @@
     
     loadPanelState(); // Load persisted state
     setupGlobalClickHandler(); // Use event delegation for reliable click handling
+    setupUrlTracking(); // Track URL changes to clear context
     observeDOM();
     loadUserHistory();
+  }
+
+  // Setup URL tracking to clear context on navigation
+  function setupUrlTracking() {
+    // Check for URL changes periodically (for SPA navigation)
+    setInterval(checkUrlChange, 500);
+    
+    // Also listen for popstate events
+    window.addEventListener('popstate', checkUrlChange);
+  }
+
+  // Check if URL has changed and clear context if needed
+  function checkUrlChange() {
+    const currentUrl = window.location.href;
+    if (currentUrl !== state.lastUrl) {
+      console.log('Writer: URL changed, clearing context');
+      state.lastUrl = currentUrl;
+      clearContextOnUrlChange();
+    }
+  }
+
+  // Clear context when URL changes
+  async function clearContextOnUrlChange() {
+    // Clear candidates
+    state.candidates = [];
+    state.lastCandidates = [];
+    state.feedback = '';
+    
+    // Close any open panel
+    if (state.currentPanel) {
+      state.currentPanel.remove();
+      state.currentPanel = null;
+      document.querySelectorAll('.tweetcraft-btn.active').forEach(b => b.classList.remove('active'));
+    }
+    
+    // Persist the cleared state
+    await safeChromeStorageSet({
+      panelCandidates: [],
+      panelFeedback: ''
+    });
+    
+    console.log('Writer: Context cleared for new URL');
   }
   
   // Global click handler using event delegation

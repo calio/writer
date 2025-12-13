@@ -14,7 +14,9 @@
     tone: 'match',
     feedback: '',
     lastCandidates: [],
-    contextInvalidated: false
+    contextInvalidated: false,
+    // URL tracking for context clearing
+    lastUrl: window.location.href
   };
 
   // Platform detection
@@ -104,7 +106,50 @@
     
     loadPanelState();
     setupGlobalClickHandler();
+    setupUrlTracking(); // Track URL changes to clear context
     observeDOM();
+  }
+
+  // Setup URL tracking to clear context on navigation
+  function setupUrlTracking() {
+    // Check for URL changes periodically (for SPA navigation)
+    setInterval(checkUrlChange, 500);
+    
+    // Also listen for popstate events
+    window.addEventListener('popstate', checkUrlChange);
+  }
+
+  // Check if URL has changed and clear context if needed
+  function checkUrlChange() {
+    const currentUrl = window.location.href;
+    if (currentUrl !== state.lastUrl) {
+      console.log('Writer Reddit: URL changed, clearing context');
+      state.lastUrl = currentUrl;
+      clearContextOnUrlChange();
+    }
+  }
+
+  // Clear context when URL changes
+  async function clearContextOnUrlChange() {
+    // Clear candidates
+    state.candidates = [];
+    state.lastCandidates = [];
+    state.feedback = '';
+    
+    // Close any open panel
+    if (state.currentPanel) {
+      state.currentPanel.remove();
+      state.currentPanel = null;
+      document.querySelectorAll('.replyforge-btn.active, .tweetcraft-btn.active').forEach(b => b.classList.remove('active'));
+    }
+    
+    // Persist the cleared state
+    await safeChromeStorageSet({
+      panelCandidates: [],
+      panelFeedback: ''
+    });
+    
+    console.log('Writer Reddit: Context cleared for new URL');
   }
 
   // Load persisted panel state

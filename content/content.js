@@ -411,6 +411,14 @@
       </div>
 
       <div class="tweetcraft-input-area">
+        <div class="tweetcraft-action-row">
+          <button class="tweetcraft-regenerate-btn" title="Regenerate with current style">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/>
+            </svg>
+            Regenerate
+          </button>
+        </div>
         <div class="tweetcraft-input-row">
           <div class="tweetcraft-input-wrapper">
             <input type="text" class="tweetcraft-chat-input" placeholder="Refine: e.g., make it shorter, add humor, be more direct..." />
@@ -423,7 +431,7 @@
               </svg>
             </button>
           </div>
-          <button class="tweetcraft-send-btn">
+          <button class="tweetcraft-send-btn" title="Send refinement">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="22" y1="2" x2="11" y2="13"/>
               <polygon points="22,2 15,22 11,13 2,9 22,2"/>
@@ -447,6 +455,16 @@
 
   // Setup conversational panel event listeners
   function setupConversationalPanelListeners(panel) {
+    // Prevent scroll events from propagating to the page
+    panel.addEventListener('wheel', (e) => {
+      e.stopPropagation();
+    }, { passive: false });
+
+    // Also prevent touchmove propagation for mobile
+    panel.addEventListener('touchmove', (e) => {
+      e.stopPropagation();
+    }, { passive: false });
+
     // Close button
     panel.querySelector('.tweetcraft-panel-close').addEventListener('click', () => {
       savePanelState();
@@ -476,6 +494,16 @@
       renderConversation(panel);
       renderAttachedImages(panel);
       savePanelState();
+    });
+
+    // Regenerate button - regenerate with current style
+    panel.querySelector('.tweetcraft-regenerate-btn').addEventListener('click', () => {
+      // Clear conversation and regenerate
+      state.conversation = [];
+      panel._attachedImages = [];
+      renderConversation(panel);
+      renderAttachedImages(panel);
+      sendMessage(panel, 'Generate reply options');
     });
 
     // Tone chips

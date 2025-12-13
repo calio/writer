@@ -534,9 +534,16 @@
       </div>
 
       ${state.originalPost ? `
-        <div class="tweetcraft-context-preview">
-          <div class="tweetcraft-context-label">Replying to:</div>
-          <div class="tweetcraft-context-text">${escapeHtml(state.originalPost.substring(0, 150))}${state.originalPost.length > 150 ? '...' : ''}</div>
+        <div class="tweetcraft-context-preview" data-expanded="false">
+          <div class="tweetcraft-context-header">
+            <div class="tweetcraft-context-label">Replying to:</div>
+            <button class="tweetcraft-context-toggle" title="Show full post">
+              <svg class="expand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6,9 12,15 18,9"/>
+              </svg>
+            </button>
+          </div>
+          <div class="tweetcraft-context-text">${escapeHtml(state.originalPost)}</div>
         </div>
       ` : ''}
 
@@ -589,6 +596,17 @@
         document.querySelectorAll('.replyforge-btn.active, .tweetcraft-btn.active').forEach(b => b.classList.remove('active'));
       }, 200);
     });
+
+    // Context toggle button (expand/collapse original post)
+    const contextToggle = panel.querySelector('.tweetcraft-context-toggle');
+    if (contextToggle) {
+      contextToggle.addEventListener('click', () => {
+        const preview = panel.querySelector('.tweetcraft-context-preview');
+        const isExpanded = preview.dataset.expanded === 'true';
+        preview.dataset.expanded = (!isExpanded).toString();
+        contextToggle.title = isExpanded ? 'Show full post' : 'Collapse';
+      });
+    }
 
     // New chat button
     panel.querySelector('.tweetcraft-new-chat-btn').addEventListener('click', () => {

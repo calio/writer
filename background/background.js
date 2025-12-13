@@ -22,8 +22,8 @@ async function handleGenerateReplies(payload) {
     throw new Error('API key not configured. Please set it in the extension settings.');
   }
 
-  const provider = settings.provider || 'anthropic';
-  const model = settings.model || (provider === 'anthropic' ? 'claude-sonnet-4-5-20241022' : 'gpt-5.2-2025-12-11');
+  const provider = settings.provider || 'openai';
+  const model = settings.model || (provider === 'openai' ? 'gpt-5.2-2025-12-11' : 'claude-sonnet-4-5-20241022');
 
   // Build user profile context
   const userProfileContext = settings.userProfile ? settings.userProfile : '';

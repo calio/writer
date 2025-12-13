@@ -493,13 +493,48 @@ html[style*="color-scheme: light"] .tweetcraft-inline-panel {
   border-bottom: 1px solid var(--tc-border);
 }
 
+.tweetcraft-context-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
 .tweetcraft-context-label {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   color: var(--tc-text-secondary);
-  margin-bottom: 4px;
   letter-spacing: 0.5px;
+}
+
+.tweetcraft-context-toggle {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tc-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.tweetcraft-context-toggle:hover {
+  background: var(--tc-bg-hover);
+  color: var(--tc-accent);
+}
+
+.tweetcraft-context-toggle svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.2s ease;
+}
+
+.tweetcraft-context-preview[data-expanded="true"] .tweetcraft-context-toggle svg {
+  transform: rotate(180deg);
 }
 
 .tweetcraft-context-text {
@@ -507,6 +542,16 @@ html[style*="color-scheme: light"] .tweetcraft-inline-panel {
   color: var(--tc-text);
   opacity: 0.8;
   line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 40px;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.tweetcraft-context-preview[data-expanded="true"] .tweetcraft-context-text {
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 /* Conversation container */

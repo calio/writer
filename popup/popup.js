@@ -20,17 +20,17 @@ const uploadedFilesContainer = document.getElementById('uploadedFiles');
 // Store uploaded documents
 let uploadedDocuments = [];
 
-// Model options by provider
+// Model options by provider (OpenAI first as default)
 const modelOptions = {
-  anthropic: [
-    { value: 'claude-sonnet-4-5-20241022', label: 'Claude Sonnet 4.5' },
-    { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
-    { value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' }
-  ],
   openai: [
     { value: 'gpt-5.2-2025-12-11', label: 'GPT-5.2' },
     { value: 'gpt-4o', label: 'GPT-4o' },
     { value: 'gpt-4o-mini', label: 'GPT-4o Mini' }
+  ],
+  anthropic: [
+    { value: 'claude-sonnet-4-5-20241022', label: 'Claude Sonnet 4.5' },
+    { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
+    { value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' }
   ]
 };
 

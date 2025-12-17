@@ -9,11 +9,11 @@ A Chrome extension that helps you craft intelligent, personalized replies using 
 ### 1. Download the Extension
 
 ```bash
-git clone https://github.com/yourusername/yangon.git
-cd yangon
+git clone https://github.com/calio/writer.git
+cd writer
 ```
 
-Or [download as ZIP](https://github.com/yourusername/yangon/archive/refs/heads/main.zip) and extract.
+Or [download as ZIP](https://github.com/calio/writer/archive/refs/heads/main.zip) and extract.
 
 ### 2. Load in Chrome
 
@@ -25,7 +25,7 @@ Or [download as ZIP](https://github.com/yourusername/yangon/archive/refs/heads/m
 
 ![Enable developer mode](screenshots/step2-developer-mode.png)
 
-**Step 3:** Click **Load unpacked** and select the `yangon` folder
+**Step 3:** Click **Load unpacked** and select the `writer` folder
 
 The Writer AI icon should now appear in your extensions toolbar.
 

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background gradient -->
+  <defs>
+    <linearGradient id="grad48" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded rectangle background -->
+  <rect width="48" height="48" rx="9.600000000000001" fill="url(#grad48)"/>
+
+  <!-- W letter -->
+  <text
+    x="24"
+    y="24"
+    font-family="Arial, Helvetica, sans-serif"
+    font-size="28.799999999999997"
+    font-weight="bold"
+    fill="white"
+    text-anchor="middle"
+    dominant-baseline="central">W</text>
+</svg>

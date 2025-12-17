@@ -1,6 +1,6 @@
 # Writer AI ✍️
 
-A Chrome extension that helps you craft intelligent, personalized replies using AI on Twitter/X and Reddit.
+A Chrome extension that helps you craft intelligent, personalized content using AI on **any website**. Works with Twitter/X, Reddit, Gmail, LinkedIn, and all text input fields.
 
 ![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285f4?style=for-the-badge&logo=googlechrome&logoColor=white)
 
@@ -40,27 +40,38 @@ The Writer AI icon should now appear in your extensions toolbar.
 
 ## 💡 How to Use
 
-### On Twitter/X
+### Universal Mode (Works Everywhere!)
 
-1. Open any tweet on [twitter.com](https://twitter.com) or [x.com](https://x.com)
-2. Click the **Writer AI button** (purple icon) in the reply toolbar
-3. Review the AI-generated reply options
-4. Click **Use this** to insert your chosen reply
+Writer AI now works on **any website** with text input fields:
 
-### On Reddit
+1. Navigate to any website (Gmail, LinkedIn, Discord, Slack, etc.)
+2. Focus on or click near any text input field or textarea
+3. Look for the **purple AI button** that appears near the input
+4. Click it to open the AI assistant panel
+5. The extension automatically extracts context from the page
+6. Review AI-generated options and click **Use this text**
 
-1. Find a post or comment on [reddit.com](https://reddit.com)
-2. Click **reply** to open the comment form
-3. Click the **Writer AI button** near the text area
-4. Select and insert your preferred reply
+### Platform-Specific Features
+
+**Twitter/X:**
+- Integrated reply button in the tweet toolbar
+- Analyzes tweet content and images
+- Matches your Twitter voice
+
+**Reddit:**
+- Button appears in comment forms
+- Understands post context
+- Adapts to subreddit tone
 
 ## ✨ Features
 
-- **AI-Powered Replies**: Generate multiple reply candidates using GPT or Claude
-- **Personal Style Matching**: Uses your previous posts to match your voice
-- **Multiple Tones**: Professional, Casual, Witty, Thoughtful, or Match My Style
-- **Vision Support**: Analyzes images in tweets for context-aware replies
-- **Platform Support**: Works on Twitter/X and Reddit
+- **Universal Input Detection**: Automatically works on any website with text inputs
+- **Smart Context Extraction**: Analyzes page content to understand what you're replying to
+- **AI-Powered Writing**: Generate multiple options using GPT or Claude
+- **Multiple Tones**: Professional, Casual, Witty, Thoughtful, Concise, or Detailed
+- **Vision Support**: Analyzes images in tweets for context-aware replies (Twitter)
+- **Conversational Refinement**: Iteratively improve generated text with feedback
+- **Platform Support**: Twitter/X, Reddit, Gmail, LinkedIn, and **any website**
 
 ## 🔐 Privacy
 
